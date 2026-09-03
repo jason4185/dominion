@@ -116,7 +116,7 @@ const SEEDS: Seed[] = [
   { cat: "AI_GROWTH", offsetHours: -5, status: "INCONCLUSIVE", pools: [300, 220, 180], winnerIdx: null, degraded: true, user: { assetIdx: 1, stake: 70 } },
   { cat: "CRYPTO_FINTECH", offsetHours: -6, status: "INCONCLUSIVE", pools: [140, 95, 165], winnerIdx: null, degraded: true },
   { cat: "BIG_TECH", offsetHours: -7, status: "SETTLED", pools: [720, 810, 430], winnerIdx: 1, user: { assetIdx: 1, stake: 110, claimed: true }, claimed: true },
-  { cat: "AI_GROWTH", offsetHours: -8, status: "SETTLED", pools: [260, 340, 400], winnerIdx: 2, winnerIdxNote: undefined } as Seed,
+  { cat: "AI_GROWTH", offsetHours: -8, status: "SETTLED", pools: [260, 340, 400], winnerIdx: 2 },
 ];
 
 interface State {
