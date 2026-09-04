@@ -1,0 +1,183 @@
+import * as React from "react";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAccount } from "wagmi";
+import { contractAdapter } from "./contractAdapter";
+import { fetchLivePerformance } from "./liveChart";
+import type { CategoryId, MarketView, SourceId } from "./types";
+
+export function useNow(intervalMs = 1000) {
+  const [now, setNow] = React.useState(0);
+  React.useEffect(() => {
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
+export function useWalletAddress(): string | undefined {
+  const address = useAccount().address;
+  const queryClient = useQueryClient();
+  const previousAddress = React.useRef<string | undefined>(undefined);
+
+  React.useEffect(() => {
+    if (previousAddress.current !== address || !address) {
+      [
+        ["dominion", "market"],
+        ["dominion", "betting-state"],
+        ["dominion", "position"],
+        ["dominion", "positions"],
+        ["dominion", "claimable"],
+        ["dominion", "activity"],
+        ["dominion", "activity-count"],
+      ].forEach((queryKey) => queryClient.removeQueries({ queryKey }));
+    }
+    previousAddress.current = address;
+  }, [address, queryClient]);
+
+  return address;
+}
+
+export function useProtocolConfig() {
+  return useQuery({
+    queryKey: ["dominion", "config"],
+    queryFn: () => contractAdapter.getConfig(),
+    staleTime: 300_000,
+  });
+}
+
+export function useCategories() {
+  return useQuery({
+    queryKey: ["dominion", "categories"],
+    queryFn: () => contractAdapter.categories(),
+    staleTime: 300_000,
+  });
+}
+
+export function useCategoryAssets(categories: CategoryId[]) {
+  return useQueries({
+    queries: categories.map((category) => ({
+      queryKey: ["dominion", "category-assets", category],
+      queryFn: () => contractAdapter.categoryAssets(category),
+      staleTime: 300_000,
+    })),
+  });
+}
+
+export function useMarkets(now: number, openOnly = false) {
+  return useQuery({
+    queryKey: ["dominion", openOnly ? "open-markets" : "markets"],
+    queryFn: () =>
+      openOnly ? contractAdapter.getOpenMarkets(now) : contractAdapter.getMarkets(now),
+    refetchInterval: 20_000,
+  });
+}
+
+export function useMarket(marketId: string, now: number, address?: string) {
+  return useQuery({
+    queryKey: ["dominion", "market", marketId, address ?? "public"],
+    queryFn: () => contractAdapter.getMarket(marketId, now, address),
+    refetchInterval: 20_000,
+    enabled: Boolean(marketId),
+  });
+}
+
+export function useBettingState(marketId: string, now: number, address?: string) {
+  return useQuery({
+    queryKey: ["dominion", "betting-state", marketId, address ?? "public"],
+    queryFn: () => contractAdapter.getBettingState(marketId, now, address),
+    refetchInterval: 20_000,
+    enabled: Boolean(marketId),
+  });
+}
+
+export function useSourceEvidence(marketId: string, source?: SourceId, enabled = true) {
+  return useQuery({
+    queryKey: ["dominion", "evidence", marketId, source ?? "all"],
+    queryFn: () => contractAdapter.getSourceEvidence(marketId, source),
+    enabled: Boolean(marketId) && enabled,
+    staleTime: 300_000,
+  });
+}
+
+export function useLivePerformance(market: MarketView, now: number) {
+  return useQuery({
+    queryKey: [
+      "dominion",
+      "live-performance",
+      market.id,
+      market.status,
+      market.startMs,
+      market.endMs,
+      market.assets.map((asset) => asset.symbol).join(","),
+    ],
+    queryFn: () =>
+      fetchLivePerformance(
+        market.assets.map((asset) => asset.symbol),
+        market.startMs,
+        market.endMs,
+      ),
+    enabled: typeof window !== "undefined" && market.status !== "UPCOMING" && now >= market.startMs,
+    staleTime: market.status === "OPEN" ? 10_000 : 300_000,
+    refetchInterval: market.status === "OPEN" ? 20_000 : false,
+  });
+}
+
+export function useUserPosition(marketId: string, address?: string) {
+  return useQuery({
+    queryKey: ["dominion", "position", marketId, address ?? "disconnected"],
+    queryFn: () => contractAdapter.getUserPosition(marketId, address!),
+    enabled: Boolean(marketId && address),
+    refetchInterval: 20_000,
+  });
+}
+
+export function useUserPositions(now: number, address?: string) {
+  return useQuery({
+    queryKey: ["dominion", "positions", address ?? "disconnected"],
+    queryFn: () => contractAdapter.getUserPositions(now, address!),
+    enabled: Boolean(address),
+    refetchInterval: 20_000,
+  });
+}
+
+export function useClaimableMarkets(now: number, address?: string) {
+  return useQuery({
+    queryKey: ["dominion", "claimable", address ?? "disconnected"],
+    queryFn: () => contractAdapter.getClaimableMarkets(now, address!),
+    enabled: Boolean(address),
+    refetchInterval: 20_000,
+  });
+}
+
+export function useUserActivity(address?: string, limit = 6) {
+  return useQuery({
+    queryKey: ["dominion", "activity", address ?? "disconnected", limit],
+    queryFn: () => contractAdapter.getUserActivity(address!, 0, limit),
+    enabled: Boolean(address),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useUserActivityCount(address?: string) {
+  return useQuery({
+    queryKey: ["dominion", "activity-count", address ?? "disconnected"],
+    queryFn: () => contractAdapter.getUserActivityCount(address!),
+    enabled: Boolean(address),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useRefreshDominion() {
+  const queryClient = useQueryClient();
+  return async (): Promise<void> => {
+    await Promise.allSettled([
+      queryClient.invalidateQueries({ queryKey: ["dominion"] }),
+      queryClient.invalidateQueries({ queryKey: ["balance"] }),
+    ]);
+  };
+}
+
+export function categoryQueryKey(category: CategoryId) {
+  return ["dominion", "category-assets", category] as const;
+}

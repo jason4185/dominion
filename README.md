@@ -1,274 +1,431 @@
-# Dominion Markets
+# Dominion
 
-Build a COMPLETE frontend-first dApp named DOMINION in this single pass. Do not stop after scaffolding. Do not return a plan. Do not say what remains. Create all routes/pages, wire navigation/providers, fix build/runtime errors, and finish with a working rendered preview.
+Permissionless one-hour stock dominance markets, settled by 2-of-3 independent exchange consensus on GenLayer.
 
-CREDIT EFFICIENCY IS CRITICAL:
-- Use one coherent implementation pass.
-- No Supabase, database, auth backend, analytics, or unrelated integrations.
-- No unnecessary abstractions or overengineering.
-- Use mock data + a thin contract adapter layer only.
-- Do not spend time on speculative features.
-- Reuse components across pages.
-- Desktop-first, responsive enough for tablet/mobile.
+Dominion is a GenLayer Intelligent Contract for focused, short-horizon markets on the relative performance of three stocks in a fixed category. Anyone can create a future exact-hour market, choose one outcome with native GEN, and settle an expired market. The contract reads bounded index/reference candles from Binance, Bitget, and Gate, then stores the evidence and outcome on-chain.
 
-PRODUCT
-Dominion is a permissionless 1-hour stock dominance prediction market on GenLayer.
-Every market has exactly 3 fixed assets based on category:
-BIG TECH: AAPL, META, GOOGL
-AI & GROWTH: NVDA, PLTR, TSLA
-CRYPTO & FINTECH: MSTR, COIN, HOOD
+## Live Links
 
-Rules reflected in UI:
-- exactly 1-hour clean UTC market windows
-- users choose ONE asset per wallet per market
-- same-asset top-ups allowed
-- switching asset after first bet is not allowed
-- minimum bet 1 GEN
-- no app-level max
-- 0% fee
-- pari-mutuel pool model, NOT odds/order-book/AMM/yes-no shares
-- settlement uses Binance + Bitget + Gate reference/index candles
-- 2-of-3 source consensus
-- highest numerical percentage return wins, including least-negative if all three are negative
-- any wallet may create markets
-- any wallet may settle expired markets
-- only the position owner can claim/refund
+- Frontend: [frontend source](./frontend); no public deployment URL is recorded in this repository.
+- GitHub: `<GitHub repository URL>` placeholder; the repository URL is not available in this workspace.
+- Bradbury contract: `0xec08425932105bC12c2B9A7F91D50Be60DDAEBa4` — no explorer URL is assumed.
+- Network: GenLayer Bradbury Testnet, chain ID `4221`; [Bradbury RPC endpoint](https://rpc-bradbury.genlayer.com).
 
-VISUAL DIRECTION
-Create an original premium dark financial interface inspired conceptually by:
-- Polymarket: dense market discovery, compact cards, search/filter hierarchy, market detail with sticky action panel
-- Crown: near-black GenLayer dashboard, clean portfolio stat cards, permissionless create flow, compact nav
-- Manifold: simple browse hierarchy
-Do NOT clone any brand.
+## The Problem
 
-Design system:
-- near-black background #0b0d0f / #0f1114
-- slightly lighter panels
-- subtle borders, 12-16px radius, minimal shadows
-- primary accent: electric violet/indigo
-- sparing gold accent for protocol/premium cues
-- green for positive/claimable, red only warnings/loss
-- muted gray secondary text
-- crisp financial typography and tabular numerals
-- no glassmorphism overload, no gradients everywhere
-- simple DOMINION logo using Lucide crown/shield/orbit icon + wordmark
+Stock markets produce enormous amounts of noisy short-term information. People often compare companies informally—who led Big Tech during the last hour, or which AI stock moved first—but there is no simple permissionless market for the precise question: which stock led this category during this exact hour?
 
-TOP NAV — MUST BE COMPLETE AND WORKING
-Desktop:
-- DOMINION logo
-- Markets
-- Portfolio
-- Activity
-- Create Market
-- How it works
-- search input
-- notification bell with badge
-- GenLayer Bradbury Testnet status pill
-- mock wallet pill with truncated address and GEN balance
-Mobile: compact header + drawer or bottom navigation.
+Traditional betting and prediction products can depend on platform-defined markets, centralized resolution, or outcome rules that are difficult to inspect. Other systems average price feeds, mix data types, or rely on a single oracle or operator. A short-horizon comparative market needs a precise UTC window, a deterministic return calculation, independently checked evidence, and a transparent terminal path when evidence cannot converge.
 
-ROUTES — ALL MUST EXIST AND RENDER
-1. / -> redirect/render /markets
-2. /markets
-3. /market/:id
-4. /portfolio
-5. /activity
-6. /create
-7. /how-it-works
+## Why This Market Should Exist
 
-Use whatever routing system the default Lovable stack uses. Every nav link must work. No placeholder route pages.
+Prediction-market research studies how financial incentives can encourage participants to act on dispersed information and express their beliefs through prices or positions. The literature reports that market-generated forecasts are often strong relative to moderately sophisticated benchmarks and can incorporate new information quickly, while also emphasizing that accuracy depends on market and contract design. See [Wolfers and Zitzewitz][research-prediction-markets] and [Snowberg, Wolfers, and Zitzewitz][research-economic-forecasting].
 
-MOCK DATA LAYER
-Create a small typed mock data source with at least 12 markets spanning:
-- all 3 categories
-- OPEN
-- UPCOMING
-- SETTLED
-- INCONCLUSIVE
-- some with connected wallet positions
-- some claimable/refundable
-Include a connected mock wallet with address and GEN balance.
+Dominion applies that general idea to a deliberately narrow question. Participants are not forecasting an absolute price or even simply asking whether a stock will rise; they are choosing which of three fixed assets will have the highest numerical percentage return in one defined hour. The comparison set and end time reduce ambiguity, making the market a focused coordination and information instrument, while permissionless creation lets markets form around the future hours users actually care about. These are Dominion design choices, not a claim that the cited research studied Dominion or that every prediction market is accurate.
 
-Create a thin contractAdapter exposing future-compatible methods:
-- getConfig
-- getMarket
-- getMarkets
-- getOpenMarkets
-- getUserPosition
-- getUserPositions
-- getClaimableMarkets
-- getSourceEvidence
-- getMarketByCategoryStart
-- getUserActivityCount
-- getUserActivity
-- createMarket
-- placeBet
-- settleMarket
-- claim
-- claimRefund
-For now these operate on mock data only.
+## Vision
 
-MARKETS PAGE — COMPLETE
-Hero/header: “Stock dominance, one hour at a time.” plus short subtitle.
-Filters:
-- All
-- Big Tech
-- AI & Growth
-- Crypto & Fintech
-Status filters:
-- Open
-- Upcoming
-- Settled
-- Inconclusive
-Search by category, asset symbol, or market ID.
-3-column desktop grid, 2 tablet, 1 mobile.
-Each card shows:
-- category badge
-- exact UTC window
-- countdown/status
-- total pool GEN
-- three asset rows with symbol, company name, pool GEN, pool share %
-- visual pool-share bar
-- connected-wallet selection indicator if positioned
-- CTA View Market / Bet Now
-Cards must feel dense and polished, not huge empty panels.
+Dominion was created around a small question that is easy to understand and hard to settle well: which stock had the highest return during this exact hour?
 
-MARKET DETAIL PAGE — COMPLETE
-Left/main section:
-- category + market ID
-- title like “Which stock leads BIG TECH from 15:00–16:00 UTC?”
-- start/end/countdown/status
-- total pool
-- three large outcome cards/rows showing asset symbol, company, pool, pool share
-- user position summary if present
-- market rules section
-- settlement explanation
-- source evidence section for Binance / Bitget / Gate with status and winner for settled examples
-- clear winner state after settlement
-- inconclusive/refund presentation when applicable
-Right sticky betting panel:
-- three selectable asset buttons
-- amount input in GEN
-- quick buttons +1, +5, +10, MAX mock balance
-- minimum 1 GEN copy
-- estimated pool share / informational summary, NOT fake odds
-- 0% fee
-- Place Bet button
-- if wallet already chose an asset, lock other two and allow top-up same asset only
-- if market settled, replace with Claim Winnings / Claim Refund / result state
-- mock actions update UI/toast
+The goal is to make short-horizon market competition accessible without requiring an administrator to create each market or resolve each result. A creator selects a fixed category and a future UTC hour; any participant can choose an outcome; and any wallet can attempt settlement after expiry. The rules, source evidence, pool accounting, and terminal state are defined by the contract rather than by a private operator.
 
-PORTFOLIO PAGE — COMPLETE
-Top stat cards:
-- Total Staked
-- Claimable
-- Active Positions
-- Settled Positions
-Tabs:
-- Active
-- Claimable
-- History
-Each position card/row shows market, category, selected asset, stake, state, result, claimable amount, CTA if claim/refund available.
-Proper empty states included.
+The broader pattern is reusable: a deterministic comparison over externally observed data, paired with evidence-based resolution and a bounded path to refunds. Dominion combines that protocol structure with a consumer-grade frontend so the market remains understandable without hiding how it settles.
 
-ACTIVITY PAGE — COMPLETE
-Wallet activity timeline/list with compact cards for:
-- BET_PLACED
-- BET_TOPPED_UP
-- PAYOUT_CLAIMED
-- REFUND_CLAIMED
-Also show derived states such as WON / LOST / REFUND AVAILABLE in presentation if useful.
-Include filters All / Bets / Claims / Refunds.
-Notification bell dropdown in nav should show latest activity, unread badge managed locally in mock state; no blockchain write concept.
+## The Solution
 
-CREATE MARKET PAGE — COMPLETE
-Permissionless creation UI.
-- category selector: Big Tech, AI & Growth, Crypto & Fintech
-- show the 3 locked assets for selected category
-- date picker
-- only exact upcoming 1-hour UTC windows such as 15:00→16:00
-- past windows disabled
-- selected-window preview card
-- concise protocol rules
-- Create Market button
-- mock creation success toast and route to created market
-No arbitrary stock selection.
+Dominion provides:
 
-HOW IT WORKS PAGE — COMPLETE
-Sections:
-1. Choose a category
-2. Pick one stock
-3. Pari-mutuel pool
-4. 1-hour reference-price window
-5. 2-of-3 source settlement
-6. Highest percentage return wins, including least-negative
-7. Claims/refunds
-8. Permissionless create and settlement
-Include concise FAQ accordion.
+- Three fixed categories, each containing three fixed stocks.
+- Exact one-hour UTC windows derived from a numeric Unix `market_start`.
+- Permissionless market creation for a valid future category/hour pair.
+- Native GEN pari-mutuel betting with one wallet-selected outcome per market.
+- No Dominion protocol fee.
+- Binance, Bitget, and Gate index/reference candles for settlement evidence.
+- Independent per-source winner selection followed by 2-of-3 final consensus.
+- Permissionless settlement after the market window ends.
+- Pull-based winnings claims and original-stake refunds.
 
-FRONTEND READ UX
-Expose frontend-ready fields in mock objects for:
-- total pool
-- per-asset pools
-- betting open
-- settlement available
-- winner
-- winning pool
-- claimed pool
-- remaining pool
-- user selected asset
-- user stake
-- can top up
-- position won/lost
-- claim/refund availability
-- claimable amount
-- claim type
+## How It Works
 
-NOTIFICATION MODEL
-Use local/mock activity records only. Bell badge should derive unread count from local state. Do not build backend notifications.
+1. **Create Market** — A wallet selects a fixed category and a future UTC hour aligned to `3,600` seconds.
+2. **Place Bet** — Before the start time, a wallet sends at least `1 GEN` and selects one of the category’s three stocks.
+3. **Market Opens** — The market remains open for betting until its numeric start timestamp.
+4. **One-Hour Window Runs** — The contract’s fixed window runs from `market_start` to `market_start + 3,600` seconds.
+5. **Anyone Settles** — After expiry, any wallet may call `settle_market`.
+6. **Sources Vote** — Each approved source independently validates the exact candle and nominates a winner.
+7. **Winner / Inconclusive** — Agreement produces `SETTLED`; otherwise the market can become `INCONCLUSIVE` through the settlement rules or deadline fallback.
+8. **Claim Winnings or Refund** — Winning positions claim their pari-mutuel payout; inconclusive positions reclaim their exact accumulated stake.
 
-INTERACTION QUALITY
-- All buttons and filters should work against mock state.
-- Search should work.
-- category/status filters should work.
-- market cards navigate correctly.
-- wallet position top-up restrictions should work in mock UI.
-- claim/refund buttons update local mock state and toast success.
-- create-market flow should work with mock data.
-- no dead nav links.
-- no blank screens.
+### Market Lifecycle
 
-TECHNICAL FINISH REQUIREMENT
-Before finishing:
-- create every route file
-- wire root providers
-- wire nav
-- ensure app compiles
-- fix TypeScript errors
-- fix runtime errors
-- ensure preview renders on /markets and every route
-- do NOT stop to explain incomplete work
-- if something breaks, fix it in this same pass
-
-FINAL RESPONSE SHOULD ONLY SUMMARIZE WHAT WAS ACTUALLY COMPLETED AND CONFIRM THE PREVIEW RENDERS. Do not propose future work unless something is genuinely impossible.
-
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/b2ae7c77-b518-4f54-b133-84d19b00cffa).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+```mermaid
+flowchart LR
+    CREATE["CREATE"] --> OPEN["OPEN FOR BETTING"]
+    OPEN --> START["MARKET START"]
+    START --> CLOSED["BETTING CLOSED"]
+    CLOSED --> MARKET_END["MARKET END"]
+    MARKET_END --> SETTLEMENT["SETTLEMENT"]
+    SETTLEMENT -->|"2-of-3 consensus"| SETTLED["SETTLED"]
+    SETTLEMENT -->|"no terminal consensus before deadline"| RETRY["RETRY WITHIN 6 HOURS"]
+    RETRY -->|"another attempt before deadline"| SETTLEMENT
+    RETRY -->|"deadline reached"| INCONCLUSIVE["INCONCLUSIVE"]
+    SETTLED --> CLAIM["CLAIM"]
+    INCONCLUSIVE --> REFUND["REFUND"]
 ```
+
+### Settlement Consensus
+
+```mermaid
+flowchart TB
+    subgraph BINANCE["Binance"]
+        B_ASSETS["Category assets<br/>AAPL / META / GOOGL<br/>(or selected category)"] --> B_CANDLE["Exact 1H index/reference candle"]
+        B_CANDLE --> B_PRICES["open + close"] --> B_RETURN["return"] --> B_WINNER["source winner"]
+    end
+    subgraph BITGET["Bitget"]
+        BG_ASSETS["Category assets<br/>AAPL / META / GOOGL<br/>(or selected category)"] --> BG_CANDLE["Exact 1H index/reference candle"]
+        BG_CANDLE --> BG_PRICES["open + close"] --> BG_RETURN["return"] --> BG_WINNER["source winner"]
+    end
+    subgraph GATE["Gate"]
+        G_ASSETS["Category assets<br/>AAPL / META / GOOGL<br/>(or selected category)"] --> G_CANDLE["Exact 1H index/reference candle"]
+        G_CANDLE --> G_PRICES["open + close"] --> G_RETURN["return"] --> G_WINNER["source winner"]
+    end
+    B_WINNER --> CONSENSUS["2-of-3 consensus<br/>(source winners only; no averaging across exchanges)"]
+    BG_WINNER --> CONSENSUS
+    G_WINNER --> CONSENSUS
+    CONSENSUS -->|"two matching valid winners"| FINAL["final winner"]
+    CONSENSUS -->|"no 2-of-3"| REFUND_STATE["INCONCLUSIVE<br/>refunds"]
+```
+
+### Funds Flow
+
+```mermaid
+flowchart LR
+    WALLETS["Wallets"] --> BET["place_bet"] --> OUTCOME["outcome pools"] --> TOTAL["total market pool"] --> SETTLE_FUNDS["settlement"]
+    SETTLE_FUNDS --> SETTLED_FUNDS["SETTLED"] --> WIN_POOL["winning pool"] --> PAYOUT["pari-mutuel payout"] --> REMAINDER["final claimant receives rounding remainder"]
+    SETTLE_FUNDS --> INCONCLUSIVE_FUNDS["INCONCLUSIVE"] --> REFUNDS["exact original stake refunds"]
+    POLICY["no treasury<br/>no protocol fee<br/>no admin withdrawal"] -.-> TOTAL
+```
+
+## Architecture
+
+Dominion is organized around one contract-owned state machine:
+
+| Layer | Responsibility |
+| --- | --- |
+| `contracts/Dominion.py` | Category and time validation, betting custody, bounded web reads, candle validation, fixed-point returns, source ranking, validator equivalence, consensus, accounting, claims, refunds, and terminal states. |
+| Settlement inputs | Binance, Bitget, and Gate index/reference candle endpoints are selected by the contract. Their responses are treated as untrusted external text and validated against the requested asset, interval, and timestamp. |
+| `frontend/` | TanStack application using `genlayer-js` for live contract reads and injected-wallet writes. It presents contract state and transaction progress; it does not supply prices or payout decisions. |
+
+After expiry, settlement obtains one result per approved source and stores canonical evidence for the market. A market either records a winner with `SETTLED` state or records a refundable `INCONCLUSIVE` state. The exact state-ownership boundary is documented in [Contract as the Source of Truth](#contract-as-the-source-of-truth).
+
+## Key Innovations
+
+### Permissionless market creation
+
+Anyone can create a valid future market for one of the locked categories and one future exact UTC hour. The contract derives the three assets and rejects invalid, unaligned, duplicate, or non-future starts.
+
+### Permissionless settlement
+
+The creator is not required to settle a market. Any wallet can call `settle_market` after expiry, subject to the contract’s evidence and timing rules.
+
+### Per-source winner first
+
+Dominion does not average exchange prices or returns. Each source independently computes the three asset returns and chooses a winner before source results are compared.
+
+### 2-of-3 source consensus
+
+Two matching valid source winners are sufficient to settle. A source that is tied or unavailable contributes no vote.
+
+### Reference/index price settlement
+
+Settlement uses index/reference candles: Binance `indexPriceKlines`, Bitget `type=INDEX`, and Gate `index_<ASSET>_USDT`. This is distinct from relying on an ordinary last-traded futures candle.
+
+### Negative-return correctness
+
+The contract compares numerical returns, not whether they are positive. If all three assets fall, the least-negative return wins: `-0.2%` beats `-0.5%`.
+
+### Tie-safe settlement
+
+Equal return units at the contract’s deterministic precision produce `TIE` for that source and do not cast a source vote.
+
+### Deterministic fixed-point arithmetic
+
+External decimal prices are normalized to integers. Return comparisons and pool calculations use integer arithmetic with no floating-point settlement path.
+
+### Settlement liveness fallback
+
+Settlement can retry from market end through a six-hour window. After the stored deadline, any caller can finalize the still-open market as `INCONCLUSIVE` without another web call, making positions refundable.
+
+### Crown-style dust handling
+
+Ordinary winning claims use integer floor division. The final winning claimant receives the remaining integer pool, so complete claims do not leave rounding dust trapped in the market.
+
+### Contract-backed frontend
+
+The deployed contract is the runtime source of truth for protocol state. The frontend uses local state only for presentation and temporary read caching; it has no mock runtime markets or local protocol database.
+
+## Technical Pillars
+
+### Deterministic Time
+
+`market_start` is a numeric Unix timestamp in `u256` seconds. It must be strictly greater than the deterministic GenLayer transaction timestamp and divisible by `3,600`, which aligns it to an exact UTC hour. The contract derives a fixed `3,600`-second end time, closes betting at the start, and derives the settlement deadline as the end plus six hours. No wall-clock API is used for protocol timing.
+
+### Fixed-Point Pricing
+
+Price text is normalized to an `18`-decimal integer scale. Returns are stored as signed integer units of `10^-6` percentage points, using deterministic half-away-from-zero rounding. No floating-point operation is used for settlement arithmetic or winner selection.
+
+### Bounded External Data
+
+Each source must return one completed candle for each of the three category assets at the exact requested timestamp and interval. Responses are bounded to `65,536` bytes. Strict parser checks reject malformed shapes, wrong source or symbol metadata, wrong category/asset, wrong interval, missing or duplicate candles, stale or future timestamps, non-positive or non-numeric prices, HTTP errors, and unexpected source identifiers.
+
+### Validator Equivalence
+
+Source evidence is fetched and recomputed independently by the leader and validator. Under the current strict equivalence model, validator evidence must match the leader evidence for the source, category, timing, status, winner, and deterministic candle rows. This is safety-first: a different witness can cause a retry even when it implies the same winner; the deadline fallback protects financial liveness.
+
+### Pool Accounting
+
+Pools are isolated by market and outcome. Aggregate additions are checked as `u256`, payout multiplication/division avoids constructing an unchecked wide product, refunds are exact, and transfer recipients are derived from the immediate caller. No arbitrary recipient is accepted by a claim or refund method.
+
+### Read Model
+
+The frontend-facing read model is paginated and contract-backed:
+
+- `get_markets`
+- `get_open_markets`
+- `get_user_position`
+- `get_user_positions`
+- `get_claimable_markets`
+- `get_source_evidence`
+- `get_user_activity` and `get_user_activity_count`
+
+Pages are bounded by the contract’s maximum page size of `50`. Market views include state-derived timing, pools, settlement availability, winner, and remaining liability; position views include the selected asset, stake, claim/refund status, and claimable amount.
+
+## Market Categories
+
+Category membership is fixed by the contract. A creator chooses a category and future exact hour, not arbitrary stocks.
+
+| Category | Fixed assets |
+| --- | --- |
+| **BIG TECH** | `AAPL`, `META`, `GOOGL` |
+| **AI & GROWTH** | `NVDA`, `PLTR`, `TSLA` |
+| **CRYPTO & FINTECH** | `MSTR`, `COIN`, `HOOD` |
+
+## Settlement Rules
+
+For each source and each asset, the contract evaluates the exact completed candle for the market hour and computes:
+
+```text
+((close - open) / open) * 100
+```
+
+The implementation normalizes the decimal inputs, then compares the resulting integer return units at `10^-6` percentage-point precision.
+
+- The highest numerical return wins.
+- `+1.0%` beats `+0.5%`.
+- `-0.2%` beats `-0.5%`.
+- Exact ties at protocol precision produce no source vote.
+- Sources are not averaged; each source nominates its own winner first.
+
+The final state is determined from the three source votes:
+
+| Source result | Final state | Winner |
+| --- | --- | --- |
+| 3 same valid winners | `SETTLED` | Agreeing asset |
+| 2 same valid winners | `SETTLED` | Agreeing asset |
+| 1 valid vote only | `INCONCLUSIVE` | None |
+| 2 disagreeing valid votes + useless third | `INCONCLUSIVE` | None |
+| 3 different valid winners | `INCONCLUSIVE` | None |
+| No usable 2-of-3 agreement | `INCONCLUSIVE` | None |
+
+Here, “useless” means tied or unavailable. A valid source consensus with no bets still settles normally; it simply has no claimants.
+
+## Betting and Payouts
+
+- Bets use native GEN only.
+- The minimum bet is `1 GEN` (`10^18` base units).
+- Dominion imposes no maximum bet; normal `u256`, balance, and runtime constraints still apply.
+- Each wallet selects one outcome per market.
+- Same-outcome top-ups are allowed and accumulate.
+- Switching to a different outcome is rejected.
+- Betting closes exactly at market start.
+- The protocol fee is `0%`.
+- There is no AMM, order book, leverage, or early cash-out.
+
+For a normally settled market, the proportional payout is:
+
+```text
+user payout = user winning stake × total market pool / total winning outcome stake
+```
+
+The contract performs this as integer floor division. The final winning claimant receives the remaining market pool after earlier claims, including any integer rounding remainder. That remainder is distribution accounting, not a fee.
+
+## Refund Logic
+
+`INCONCLUSIVE` markets are refundable:
+
+- Each bettor can reclaim the exact original accumulated stake for that market.
+- A consensus winner with zero backing does not redirect funds to a backed losing outcome. If the market has a nonzero pool and the actual winner has zero stake, the financial state becomes `INCONCLUSIVE`; the actual winner remains recorded for audit and bettors receive refunds.
+- A valid consensus with zero total bets can still become `SETTLED` normally because there is no financial liability to refund.
+- A source-consensus failure records an empty winner and makes positions refundable.
+
+Refunds are pull-based and caller-bound. Each wallet calls `claim_refund` for its own stored position, and the contract prevents repeat refunds or cross-market accounting use.
+
+## Trust and Safety
+
+Dominion deliberately has no privileged financial path:
+
+- No admin withdrawal, creator withdrawal, treasury sweep, or emergency recovery method.
+- No winner override or arbitrary payout recipient.
+- The creator has no financial privilege after creation.
+- The settlement caller cannot choose prices, source results, or the winner.
+- Claims and refunds derive from the caller’s stored position and send value to that caller.
+
+The main operational boundaries are external and explicit. Exchange endpoints can be unavailable or return data that fails validation. Validators can disagree or observe different source witnesses under strict equivalence. Settlement is retryable for six hours after expiry, then requires a caller to trigger the deterministic `INCONCLUSIVE` fallback.
+
+Native GEN delivery uses the current finalized EVM value-transfer interface and effects are recorded before the external transfer is emitted. The current documented runtime boundary is that a recipient-level rejection may not provide a synchronous parent-visible result that lets the contract reopen a consumed claim. EOA delivery and payable contract-wallet delivery are expected integration paths, but recipient acceptance remains a runtime concern and is not described as a protocol guarantee.
+
+## Contract as the Source of Truth
+
+Canonical Dominion protocol state comes from the deployed Dominion contract. The frontend must not own canonical copies of:
+
+- market state
+- pools
+- positions
+- winners
+- claims
+- refunds
+- activity
+- settlement evidence
+
+The frontend may cache contract reads temporarily for rendering, but after a confirmed write it refetches the contract state. Allowed local state is presentation-only: filters, form input, chart display data, company names, and UI metadata. There is no `localStorage` or `sessionStorage` protocol persistence and no mock runtime market state.
+
+## Frontend
+
+The frontend is a TanStack application backed by `genlayer-js`. It reads markets, positions, pools, settlement evidence, claims, refunds, and wallet activity from the deployed contract, and sends writes through an injected browser wallet on Bradbury Testnet.
+
+The application includes market discovery and detail views, Portfolio, permissionless market creation, and a How It Works page. Transaction feedback covers wallet signature, submission, GenLayer processing, and finalized success. Portfolio positions and claim/refund actions are derived from contract reads.
+
+The live performance chart is informational only. It displays live index-price performance for the selected market window and cannot influence settlement or alter contract state. The notification bell is sourced from the contract’s on-chain activity records; read/unread presentation is not an on-chain protocol field.
+
+## Developer Reference
+
+The deployed contract exposes 19 public methods: 14 views and 5 writes.
+
+### Read Methods
+
+```text
+categories() -> string[]
+category_assets(category: string) -> string[]
+get_config() -> dict
+get_market(market_id: u256) -> dict
+get_markets(offset: u256, limit: u256) -> dict[]
+get_open_markets(offset: u256, limit: u256) -> dict[]
+get_user_position(market_id: u256, user: address) -> dict
+get_user_positions(user: address, offset: u256, limit: u256) -> dict[]
+get_claimable_markets(user: address, offset: u256, limit: u256) -> dict[]
+get_market_by_category_start(category: string, market_start: u256) -> dict
+get_user_activity_count(user: address) -> u256
+get_user_activity(user: address, offset: u256, limit: u256) -> dict[]
+get_source_evidence(market_id: u256, source: string) -> dict
+get_betting_state(market_id: u256) -> dict
+```
+
+### Write Methods
+
+```text
+create_market(category: string, market_start: u256) -> u256
+place_bet(market_id: u256, asset: string) payable -> void
+settle_market(market_id: u256) -> string
+claim(market_id: u256) -> void
+claim_refund(market_id: u256) -> void
+```
+
+## Repository Structure
+
+```text
+.
+├── contracts/
+│   └── Dominion.py
+├── docs/
+│   ├── architecture.md
+│   └── audit.md
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── lib/dominion/
+│   │   └── routes/
+│   ├── package.json
+│   ├── README.md
+│   └── ...
+├── tests/
+│   ├── direct/
+│   │   ├── conftest.py
+│   │   ├── test_audit_and_read_model.py
+│   │   ├── test_betting.py
+│   │   └── test_dominion.py
+│   ├── integration/
+│   │   └── test_dominion_integration.py
+│   └── conftest.py
+├── gltest.config.yaml
+├── requirements.txt
+└── README.md
+```
+
+## Testing and Validation
+
+The current repository verification baseline is:
+
+- `136` direct tests passed.
+- `3` integration tests skipped because deployment is opt-in.
+- GenVM lint passed: `3` checks.
+- Deployed Bradbury schema extraction passed: `19` methods (`14` views, `5` writes).
+- Frontend TypeScript check passed with `npx tsc --noEmit`.
+- `contracts/Dominion.py` is `41,111` bytes, below the `52,224`-byte limit by `11,113` bytes.
+
+Local validation commands:
+
+```bash
+genvm-lint check contracts/Dominion.py
+.venv/bin/pytest tests/direct/ -q
+.venv/bin/pytest tests/integration/ -q
+cd frontend && npx tsc --noEmit
+```
+
+The integration collection is gated by `DOMINION_RUN_INTEGRATION=1` and related start-time variables. The default local commands do not deploy the contract.
+
+## Live Validation
+
+The project’s Bradbury validation history includes live market creation, real GEN bets, and a live settlement test. That testing surfaced a source-window boundary: Bitget and Gate treated the upper query bound inclusively in observed responses. Those endpoint queries now use `end - 1`, and an exact-start regression fixture verifies that the intended candle is selected.
+
+## Known Limitations
+
+- Exchange API availability can delay or prevent evidence collection.
+- Nondeterministic-source results require leader and validator convergence under the current strict evidence model.
+- Someone must call `settle_market`; settlement is not an automatic background process.
+- The six-hour fallback also requires a caller.
+- The live performance chart is informational and is not settlement truth.
+- Recipient-level native GEN transfer acceptance remains a runtime concern, especially for a contract wallet that rejects the transfer.
+
+## Why GenLayer
+
+Dominion needs to read real-world web evidence while keeping the resulting market state deterministic. GenLayer supplies validator-backed nondeterministic reads, agreement over independently observed exchange data, deterministic contract storage and accounting, and a permissionless path for anyone to submit resolution.
+
+## Deployment
+
+- **Network:** GenLayer Bradbury Testnet (`chain ID 4221`)
+- **Contract:** `0xec08425932105bC12c2B9A7F91D50Be60DDAEBa4`
+- **Frontend:** No public frontend URL is documented in this repository. Use the [frontend source](./frontend) for local development.
+
+## Research Notes / References
+
+The rationale above uses general prediction-market literature, not evidence that academic studies evaluated Dominion specifically.
+
+- [Justin Wolfers and Eric Zitzewitz, “Prediction Markets,” American Economic Association / Journal of Economic Perspectives 18(2), 2004](https://www.aeaweb.org/articles?id=10.1257%2F0895330041371321). DOI: `10.1257/0895330041371321`.
+- [Erik Snowberg, Justin Wolfers, and Eric Zitzewitz, “Prediction Markets for Economic Forecasting,” NBER Working Paper 18222, 2012](https://www.nber.org/papers/w18222). DOI: `10.3386/w18222`.
+
+## License
+
+No license file is present in this repository.
+
+[research-prediction-markets]: https://www.aeaweb.org/articles?id=10.1257%2F0895330041371321
+[research-economic-forecasting]: https://www.nber.org/papers/w18222
