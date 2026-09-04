@@ -11,6 +11,7 @@ import {
   StatusPill,
   StatCard,
 } from "@/components/dominion/primitives";
+import { Button } from "@/components/ui/button";
 import {
   TransactionDialog,
   TRANSACTION_DELAYED_MESSAGE,
@@ -358,8 +359,21 @@ function PortfolioPage() {
             Loading positions from Dominion…
           </Panel>
         ) : entriesQuery.isError || claimableQuery.isError ? (
-          <Panel className="mt-3 px-6 py-14 text-center text-xs text-destructive">
-            Unable to load portfolio data from the Dominion contract.
+          <Panel className="mt-3 flex flex-col items-center gap-3 px-6 py-14 text-center">
+            <p className="text-sm font-semibold text-foreground">Could not load your positions</p>
+            <p className="max-w-sm text-xs text-muted-foreground">
+              Could not reach Bradbury. Please try again.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                void Promise.allSettled([entriesQuery.refetch(), claimableQuery.refetch()]);
+              }}
+            >
+              Retry
+            </Button>
           </Panel>
         ) : tab === "ACTIVE" ? (
           <div className="mt-3">

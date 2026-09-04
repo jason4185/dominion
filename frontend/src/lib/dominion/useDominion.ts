@@ -3,6 +3,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
 import { contractAdapter } from "./contractAdapter";
 import { fetchLivePerformance } from "./liveChart";
+import { queryRetryDelay, shouldRetryRead } from "./retry";
 import type { CategoryId, MarketView, SourceId } from "./types";
 
 export function useNow(intervalMs = 1000) {
@@ -41,6 +42,8 @@ export function useProtocolConfig() {
     queryKey: ["dominion", "config"],
     queryFn: () => contractAdapter.getConfig(),
     staleTime: 300_000,
+    retry: shouldRetryRead,
+    retryDelay: queryRetryDelay,
   });
 }
 
@@ -49,6 +52,8 @@ export function useCategories() {
     queryKey: ["dominion", "categories"],
     queryFn: () => contractAdapter.categories(),
     staleTime: 300_000,
+    retry: shouldRetryRead,
+    retryDelay: queryRetryDelay,
   });
 }
 
@@ -58,6 +63,8 @@ export function useCategoryAssets(categories: CategoryId[]) {
       queryKey: ["dominion", "category-assets", category],
       queryFn: () => contractAdapter.categoryAssets(category),
       staleTime: 300_000,
+      retry: shouldRetryRead,
+      retryDelay: queryRetryDelay,
     })),
   });
 }
@@ -69,6 +76,8 @@ export function useMarkets(now: number, openOnly = false) {
       openOnly ? contractAdapter.getOpenMarkets(now) : contractAdapter.getMarkets(now),
     refetchInterval: 20_000,
     enabled: now > 0,
+    retry: shouldRetryRead,
+    retryDelay: queryRetryDelay,
   });
 }
 
@@ -78,6 +87,8 @@ export function useMarket(marketId: string, now: number, address?: string) {
     queryFn: () => contractAdapter.getMarket(marketId, now, address),
     refetchInterval: 20_000,
     enabled: Boolean(marketId) && now > 0,
+    retry: shouldRetryRead,
+    retryDelay: queryRetryDelay,
   });
 }
 
@@ -87,6 +98,8 @@ export function useBettingState(marketId: string, now: number, address?: string)
     queryFn: () => contractAdapter.getBettingState(marketId, now, address),
     refetchInterval: 20_000,
     enabled: Boolean(marketId) && now > 0,
+    retry: shouldRetryRead,
+    retryDelay: queryRetryDelay,
   });
 }
 
@@ -96,6 +109,8 @@ export function useSourceEvidence(marketId: string, source?: SourceId, enabled =
     queryFn: () => contractAdapter.getSourceEvidence(marketId, source),
     enabled: Boolean(marketId) && enabled,
     staleTime: 300_000,
+    retry: shouldRetryRead,
+    retryDelay: queryRetryDelay,
   });
 }
 
@@ -119,6 +134,8 @@ export function useLivePerformance(market: MarketView, now: number) {
     enabled: typeof window !== "undefined" && market.status !== "UPCOMING" && now >= market.startMs,
     staleTime: market.status === "OPEN" ? 10_000 : 300_000,
     refetchInterval: market.status === "OPEN" ? 20_000 : false,
+    retry: shouldRetryRead,
+    retryDelay: queryRetryDelay,
   });
 }
 
@@ -128,6 +145,8 @@ export function useUserPosition(marketId: string, address?: string) {
     queryFn: () => contractAdapter.getUserPosition(marketId, address!),
     enabled: Boolean(marketId && address),
     refetchInterval: 20_000,
+    retry: shouldRetryRead,
+    retryDelay: queryRetryDelay,
   });
 }
 
@@ -137,6 +156,8 @@ export function useUserPositions(now: number, address?: string) {
     queryFn: () => contractAdapter.getUserPositions(now, address!),
     enabled: Boolean(address) && now > 0,
     refetchInterval: 20_000,
+    retry: shouldRetryRead,
+    retryDelay: queryRetryDelay,
   });
 }
 
@@ -146,6 +167,8 @@ export function useClaimableMarkets(now: number, address?: string) {
     queryFn: () => contractAdapter.getClaimableMarkets(now, address!),
     enabled: Boolean(address) && now > 0,
     refetchInterval: 20_000,
+    retry: shouldRetryRead,
+    retryDelay: queryRetryDelay,
   });
 }
 
@@ -155,6 +178,8 @@ export function useUserActivity(address?: string, limit = 6) {
     queryFn: () => contractAdapter.getUserActivity(address!, 0, limit),
     enabled: Boolean(address),
     refetchInterval: 30_000,
+    retry: shouldRetryRead,
+    retryDelay: queryRetryDelay,
   });
 }
 
@@ -164,6 +189,8 @@ export function useUserActivityCount(address?: string) {
     queryFn: () => contractAdapter.getUserActivityCount(address!),
     enabled: Boolean(address),
     refetchInterval: 30_000,
+    retry: shouldRetryRead,
+    retryDelay: queryRetryDelay,
   });
 }
 

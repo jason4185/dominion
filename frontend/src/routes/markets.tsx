@@ -160,7 +160,9 @@ function MarketsPage() {
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => void marketsQuery.refetch()}
+              onClick={() => {
+                void Promise.allSettled([marketsQuery.refetch(), categoriesQuery.refetch()]);
+              }}
             >
               Retry
             </Button>

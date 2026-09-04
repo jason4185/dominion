@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { gen } from "../src/lib/dominion/format";
 import { GEN_SCALE, parseGenAmount } from "../src/lib/dominion/contractAdapter";
-import { retryRead } from "../src/lib/dominion/retry";
+import {
+  isRecoverableReadError,
+  queryRetryDelay,
+  retryRead,
+  shouldRetryRead,
+} from "../src/lib/dominion/retry";
 
 describe("retryRead", () => {
   test("returns a fresh read immediately", async () => {
@@ -63,6 +68,26 @@ describe("retryRead", () => {
 
     expect(result).toBeUndefined();
     expect(calls).toBe(3);
+  });
+});
+
+describe("contract read retry policy", () => {
+  test("retries transient RPC failures twice with short backoff", () => {
+    const error = new Error("GenLayer RPC error: Failed to fetch");
+    expect(isRecoverableReadError(error)).toBe(true);
+    expect(shouldRetryRead(0, error)).toBe(true);
+    expect(shouldRetryRead(1, error)).toBe(true);
+    expect(shouldRetryRead(2, error)).toBe(false);
+    expect(queryRetryDelay(0)).toBe(250);
+    expect(queryRetryDelay(1)).toBe(500);
+  });
+
+  test("does not retry deterministic malformed responses or programmer errors", () => {
+    expect(isRecoverableReadError(new Error("Invalid contract response shape."))).toBe(false);
+    expect(isRecoverableReadError(new Error("Contract market pool totals are inconsistent."))).toBe(
+      false,
+    );
+    expect(isRecoverableReadError(new Error("Unexpected programmer failure."))).toBe(false);
   });
 });
 

@@ -708,7 +708,9 @@ function MarketDetailPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => void Promise.all([marketQuery.refetch(), bettingStateQuery.refetch()])}
+              onClick={() => {
+                void Promise.allSettled([marketQuery.refetch(), bettingStateQuery.refetch()]);
+              }}
             >
               Retry
             </Button>
@@ -761,9 +763,9 @@ function MarketDetailPage() {
   ).length;
   const evidenceLoading =
     evidenceQuery.isPending ||
-    evidenceQuery.isError ||
     evidence.length < 3 ||
     evidence.some((item) => item.status === "UNAVAILABLE");
+  const evidenceError = evidenceQuery.isError;
   const hasResult = market.status === "SETTLED" || market.status === "INCONCLUSIVE";
   const positionLoading = positionState === "LOADING";
   const positionError = positionState === "ERROR";
@@ -914,12 +916,25 @@ function MarketDetailPage() {
                       Source consensus
                     </p>
                     <p className="num mt-1 text-sm font-semibold text-primary-glow">
-                      {evidenceLoading
-                        ? "Settlement completed. Evidence is still loading."
-                        : !market.winner
-                          ? "Inconclusive"
-                          : `${consensusCount}/3 votes`}
+                      {evidenceError
+                        ? "Settlement evidence is temporarily unavailable."
+                        : evidenceLoading
+                          ? "Settlement completed. Evidence is still loading."
+                          : !market.winner
+                            ? "Inconclusive"
+                            : `${consensusCount}/3 votes`}
                     </p>
+                    {evidenceError && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="mt-2"
+                        onClick={() => void evidenceQuery.refetch()}
+                      >
+                        Retry evidence
+                      </Button>
+                    )}
                   </div>
                 </div>
                 <p className="mt-4 max-w-2xl text-xs leading-relaxed text-muted-foreground">

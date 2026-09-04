@@ -3,6 +3,47 @@ export interface RetryReadOptions {
   delayMs?: number;
 }
 
+export const MAX_QUERY_RETRIES = 2;
+
+function errorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const value =
+    (error as { status?: unknown; statusCode?: unknown }).status ??
+    (error as { statusCode?: unknown }).statusCode;
+  return typeof value === "number" ? value : undefined;
+}
+
+/**
+ * Only infrastructure failures should be retried automatically. Response
+ * validation and application errors must remain visible to their local UI.
+ */
+export function isRecoverableReadError(error: unknown): boolean {
+  const status = errorStatus(error);
+  if (status === 429 || (status !== undefined && status >= 500)) return true;
+  if (status !== undefined && status >= 400) return false;
+
+  const message = error instanceof Error ? error.message : String(error);
+  if (/source evidence unavailable/i.test(message)) return true;
+  if (
+    /invalid|mismatch|not found|not supported|outside the supported|already exists|already claimed|already refunded|closed|has started|not open|not refundable|minimum bet|invalid market|programmer/i.test(
+      message,
+    )
+  ) {
+    return false;
+  }
+  return /failed to fetch|network|timeout|timed out|temporar|rate limit|too many requests|rpc|genlayer|gateway|connection refused|service unavailable|bad gateway/i.test(
+    message,
+  );
+}
+
+export function shouldRetryRead(failureCount: number, error: unknown): boolean {
+  return failureCount < MAX_QUERY_RETRIES && isRecoverableReadError(error);
+}
+
+export function queryRetryDelay(attemptIndex: number): number {
+  return Math.min(250 * 2 ** attemptIndex, 1_000);
+}
+
 export async function retryRead<T>(
   read: () => Promise<T>,
   isReady: (value: T) => boolean,
