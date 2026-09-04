@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, Check } from "lucide-react";
 import { CategoryBadge, PoolBar, StatusPill, ASSET_DOT } from "./primitives";
 import { countdown, gen, pct, utcDate, utcWindow } from "@/lib/dominion/format";
+import { resolvePositionUiState } from "@/lib/dominion/marketState";
 import { useUserPosition } from "@/lib/dominion/useDominion";
 import type { MarketView } from "@/lib/dominion/types";
 import { cn } from "@/lib/utils";
@@ -10,13 +11,20 @@ export function MarketCard({
   market,
   now,
   address,
+  walletHydrating = false,
 }: {
   market: MarketView;
   now: number;
   address: string | undefined;
+  walletHydrating?: boolean;
 }) {
   const positionQuery = useUserPosition(market.id, address);
-  const position = positionQuery.isError ? undefined : positionQuery.data;
+  const positionState = resolvePositionUiState({
+    address,
+    walletHydrating,
+    query: positionQuery,
+  });
+  const position = positionState === "HAS_POSITION" ? positionQuery.data : undefined;
   const symbols = market.assets.map((a) => a.symbol);
   const timing =
     market.status === "OPEN"
@@ -97,13 +105,13 @@ export function MarketCard({
 
       <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
         <span className="text-[11px] text-muted-foreground">
-          {!address
+          {positionState === "DISCONNECTED"
             ? "Connect wallet to see your position"
-            : positionQuery.isPending
+            : positionState === "LOADING"
               ? "Loading your position…"
-              : positionQuery.isError
+              : positionState === "ERROR"
                 ? "Could not load your position. Try again."
-                : position
+                : positionState === "HAS_POSITION" && position
                   ? `Your pick ${position.asset} · ${gen(position.stake)} GEN`
                   : "No position"}
         </span>

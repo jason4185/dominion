@@ -43,7 +43,7 @@ export const Route = createFileRoute("/markets")({
 
 function MarketsPage() {
   const now = useNow();
-  const { address } = useAccount();
+  const { address, isConnecting, isReconnecting } = useAccount();
   const { q, cat = "ALL", status = "ALL" } = Route.useSearch();
   const navigate = Route.useNavigate();
 
@@ -177,7 +177,13 @@ function MarketsPage() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {filtered.map((m) => (
-              <MarketCard key={m.id} market={m} now={now} address={address} />
+              <MarketCard
+                key={m.id}
+                market={m}
+                now={now}
+                address={address}
+                walletHydrating={isConnecting || isReconnecting}
+              />
             ))}
           </div>
         )}

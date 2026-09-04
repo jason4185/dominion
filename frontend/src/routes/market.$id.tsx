@@ -41,6 +41,7 @@ import {
   contractError,
 } from "@/lib/dominion/contractAdapter";
 import { countdown, gen, pct, utcDate, utcWindow } from "@/lib/dominion/format";
+import { resolveMarketStatus, resolvePositionUiState } from "@/lib/dominion/marketState";
 import {
   useBettingState,
   useMarket,
@@ -69,8 +70,14 @@ export const Route = createFileRoute("/market/$id")({
 });
 
 function timing(market: MarketView, now: number) {
-  if (market.status === "UPCOMING") return `Opens in ${countdown(market.startMs, now)}`;
-  if (market.status === "OPEN") return `Closes in ${countdown(market.endMs, now)}`;
+  if (market.status === "UPCOMING")
+    return now < market.startMs
+      ? `Opens in ${countdown(market.startMs, now)}`
+      : "Updating market state…";
+  if (market.status === "OPEN")
+    return now < market.endMs
+      ? `Closes in ${countdown(market.endMs, now)}`
+      : "Updating market state…";
   if (market.status === "PENDING_SETTLEMENT") return "Settlement is available";
   if (market.status === "INCONCLUSIVE") return "Refunds remain available indefinitely";
   return market.winner ? `${market.winner} won this market` : "Market resolved";
@@ -664,17 +671,24 @@ function TerminalPanel({
 function MarketDetailPage() {
   const now = useNow();
   const { id } = Route.useParams();
-  const { address } = useAccount();
+  const { address, isConnecting, isReconnecting } = useAccount();
   const marketQuery = useMarket(id, now);
   const bettingStateQuery = useBettingState(id, now);
   const positionQuery = useUserPosition(id, address);
   const publicMarket = marketQuery.data;
-  const market = publicMarket
-    ? applyPositionToMarket(
-        publicMarket,
-        positionQuery.isError ? null : (positionQuery.data ?? null),
-      )
-    : null;
+  const resolvedStatus = resolveMarketStatus(marketQuery, bettingStateQuery, now);
+  const positionState = resolvePositionUiState({
+    address,
+    walletHydrating: isConnecting || isReconnecting,
+    query: positionQuery,
+  });
+  const market =
+    publicMarket && resolvedStatus
+      ? applyPositionToMarket(
+          { ...publicMarket, status: resolvedStatus },
+          positionState === "HAS_POSITION" ? (positionQuery.data ?? null) : null,
+        )
+      : null;
   const evidenceQuery = useSourceEvidence(
     id,
     undefined,
@@ -683,16 +697,6 @@ function MarketDetailPage() {
   const refresh = useRefreshDominion();
   const transaction = useTransactionDialog();
   const [selectedAsset, setSelectedAsset] = useState("");
-
-  if (marketQuery.isPending) {
-    return (
-      <main className="mx-auto max-w-3xl px-4 py-10 lg:px-6">
-        <Panel className="px-6 py-14 text-center text-xs text-muted-foreground">
-          Loading market from Dominion…
-        </Panel>
-      </main>
-    );
-  }
 
   if (marketQuery.isError || bettingStateQuery.isError) {
     return (
@@ -714,7 +718,17 @@ function MarketDetailPage() {
     );
   }
 
-  if (!market) {
+  if (marketQuery.isPending || bettingStateQuery.isPending || now === 0) {
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-10 lg:px-6">
+        <Panel className="px-6 py-14 text-center text-xs text-muted-foreground">
+          Loading market state from Dominion…
+        </Panel>
+      </main>
+    );
+  }
+
+  if (!publicMarket) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10 lg:px-6">
         <EmptyState
@@ -730,6 +744,16 @@ function MarketDetailPage() {
     );
   }
 
+  if (marketQuery.isFetching || bettingStateQuery.isFetching || !market) {
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-10 lg:px-6">
+        <Panel className="px-6 py-14 text-center text-xs text-muted-foreground">
+          Updating market state…
+        </Panel>
+      </main>
+    );
+  }
+
   const definition = categoryById(market.category);
   const evidence = evidenceQuery.data ?? [];
   const consensusCount = evidence.filter(
@@ -741,8 +765,8 @@ function MarketDetailPage() {
     evidence.length < 3 ||
     evidence.some((item) => item.status === "UNAVAILABLE");
   const hasResult = market.status === "SETTLED" || market.status === "INCONCLUSIVE";
-  const positionLoading = Boolean(address) && positionQuery.isPending;
-  const positionError = Boolean(address) && positionQuery.isError;
+  const positionLoading = positionState === "LOADING";
+  const positionError = positionState === "ERROR";
 
   return (
     <main className="mx-auto max-w-[1400px] px-4 py-6 lg:px-6 lg:py-8">

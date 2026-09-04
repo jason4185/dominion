@@ -21,10 +21,8 @@ export function useWalletAddress(): string | undefined {
   const previousAddress = React.useRef<string | undefined>(undefined);
 
   React.useEffect(() => {
-    if (previousAddress.current !== address || !address) {
+    if (previousAddress.current !== address) {
       [
-        ["dominion", "market"],
-        ["dominion", "betting-state"],
         ["dominion", "position"],
         ["dominion", "positions"],
         ["dominion", "claimable"],
@@ -70,6 +68,7 @@ export function useMarkets(now: number, openOnly = false) {
     queryFn: () =>
       openOnly ? contractAdapter.getOpenMarkets(now) : contractAdapter.getMarkets(now),
     refetchInterval: 20_000,
+    enabled: now > 0,
   });
 }
 
@@ -78,7 +77,7 @@ export function useMarket(marketId: string, now: number, address?: string) {
     queryKey: ["dominion", "market", marketId, address ?? "public"],
     queryFn: () => contractAdapter.getMarket(marketId, now, address),
     refetchInterval: 20_000,
-    enabled: Boolean(marketId),
+    enabled: Boolean(marketId) && now > 0,
   });
 }
 
@@ -87,7 +86,7 @@ export function useBettingState(marketId: string, now: number, address?: string)
     queryKey: ["dominion", "betting-state", marketId, address ?? "public"],
     queryFn: () => contractAdapter.getBettingState(marketId, now, address),
     refetchInterval: 20_000,
-    enabled: Boolean(marketId),
+    enabled: Boolean(marketId) && now > 0,
   });
 }
 
@@ -136,7 +135,7 @@ export function useUserPositions(now: number, address?: string) {
   return useQuery({
     queryKey: ["dominion", "positions", address ?? "disconnected"],
     queryFn: () => contractAdapter.getUserPositions(now, address!),
-    enabled: Boolean(address),
+    enabled: Boolean(address) && now > 0,
     refetchInterval: 20_000,
   });
 }
@@ -145,7 +144,7 @@ export function useClaimableMarkets(now: number, address?: string) {
   return useQuery({
     queryKey: ["dominion", "claimable", address ?? "disconnected"],
     queryFn: () => contractAdapter.getClaimableMarkets(now, address!),
-    enabled: Boolean(address),
+    enabled: Boolean(address) && now > 0,
     refetchInterval: 20_000,
   });
 }
