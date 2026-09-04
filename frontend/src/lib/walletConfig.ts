@@ -2,7 +2,8 @@ import { createConfig, http, injected } from "wagmi";
 import { testnetBradbury } from "genlayer-js/chains";
 
 // Only the generic injected EIP-1193 connector is exposed. storage: null
-// prevents wagmi from persisting application connection state locally.
+// prevents wagmi from persisting application connection state locally. Since
+// there is no persistence store, keep wagmi out of its SSR rehydration path.
 export const dominionInjectedConnector = injected({ shimDisconnect: false });
 
 export const wagmiConfig = createConfig({
@@ -13,5 +14,5 @@ export const wagmiConfig = createConfig({
   },
   multiInjectedProviderDiscovery: false,
   storage: null,
-  ssr: true,
+  ssr: false,
 });
