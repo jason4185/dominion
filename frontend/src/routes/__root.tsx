@@ -16,7 +16,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { TopNav } from "@/components/dominion/TopNav";
 import { Toaster } from "@/components/ui/sonner";
-import { wagmiConfig } from "@/lib/walletConfig";
+import { wagmiConfig, wagmiReconnectOnMount } from "@/lib/walletConfig";
 
 function NotFoundComponent() {
   return (
@@ -127,7 +127,7 @@ const queryClientSingleton = new QueryClient();
 function RootComponent() {
   const ctx = Route.useRouteContext();
   return (
-    <WagmiProvider config={wagmiConfig}>
+    <WagmiProvider config={wagmiConfig} reconnectOnMount={wagmiReconnectOnMount}>
       <QueryClientProvider client={ctx?.queryClient ?? queryClientSingleton}>
         <RainbowKitProvider initialChain={wagmiConfig.chains[0]} showRecentTransactions={false}>
           <div className="min-h-screen bg-background">

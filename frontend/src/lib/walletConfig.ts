@@ -6,6 +6,11 @@ import { testnetBradbury } from "genlayer-js/chains";
 // there is no persistence store, keep wagmi out of its SSR rehydration path.
 export const dominionInjectedConnector = injected({ shimDisconnect: false });
 
+// Connection state is intentionally memory-only. Automatic reconnect-on-mount
+// would rerun during root provider renders and can clear a live SPA session
+// when an injected provider briefly reports no authorized accounts.
+export const wagmiReconnectOnMount = false;
+
 export const wagmiConfig = createConfig({
   chains: [testnetBradbury],
   connectors: [dominionInjectedConnector],
