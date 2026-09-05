@@ -5,6 +5,8 @@ GenLayer. Users choose which stock will lead a fixed category during an exact
 UTC hour, stake native GEN, and claim a pari-mutuel payout when independent
 exchange evidence reaches 2-of-3 consensus.
 
+**Live Demo:** [dominion-lilac.vercel.app](https://dominion-lilac.vercel.app/)
+
 ## What is Dominion?
 
 Dominion turns a simple comparative question into an on-chain market:
