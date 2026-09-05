@@ -194,13 +194,58 @@ export function useUserActivityCount(address?: string) {
   });
 }
 
+export type DominionWriteKind = "create" | "place_bet" | "settle" | "claim" | "refund";
+
+function writeQueryKeys(
+  kind: DominionWriteKind,
+  marketId?: string,
+): readonly (readonly unknown[])[] {
+  const market = marketId ? [["dominion", "market", marketId]] : [["dominion", "market"]];
+  if (kind === "create") {
+    return [
+      ["dominion", "markets"],
+      ["dominion", "open-markets"],
+    ];
+  }
+  if (kind === "place_bet") {
+    return [
+      ...market,
+      ["dominion", "betting-state", marketId],
+      ["dominion", "position", marketId],
+      ["dominion", "positions"],
+      ["dominion", "activity"],
+      ["dominion", "activity-count"],
+      ["balance"],
+    ];
+  }
+  if (kind === "settle") {
+    return [
+      ...market,
+      ["dominion", "betting-state", marketId],
+      ["dominion", "evidence", marketId],
+      ["dominion", "markets"],
+      ["dominion", "open-markets"],
+      ["dominion", "positions"],
+      ["dominion", "claimable"],
+    ];
+  }
+  return [
+    ...market,
+    ["dominion", "position", marketId],
+    ["dominion", "positions"],
+    ["dominion", "claimable"],
+    ["dominion", "activity"],
+    ["dominion", "activity-count"],
+    ["balance"],
+  ];
+}
+
 export function useRefreshDominion() {
   const queryClient = useQueryClient();
-  return async (): Promise<void> => {
-    await Promise.allSettled([
-      queryClient.invalidateQueries({ queryKey: ["dominion"] }),
-      queryClient.invalidateQueries({ queryKey: ["balance"] }),
-    ]);
+  return async (kind: DominionWriteKind, marketId?: string): Promise<void> => {
+    await Promise.allSettled(
+      writeQueryKeys(kind, marketId).map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+    );
   };
 }
 

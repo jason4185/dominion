@@ -4,6 +4,8 @@ import {
   CalldataAddress,
   ExecutionResult,
   TransactionStatus,
+  executionResultNumberToName,
+  transactionsStatusNumberToName,
   type CalldataEncodable,
   type TransactionHash,
 } from "genlayer-js/types";
@@ -27,8 +29,18 @@ export const GEN_SCALE = 1_000_000_000_000_000_000n;
 export const MIN_BET_WEI = GEN_SCALE;
 const MAX_PAGE = 50;
 
-export type TransactionStage = "AWAITING_SIGNATURE" | "SUBMITTED" | "PROCESSING" | "SUCCESS";
+export type TransactionStage =
+  "AWAITING_SIGNATURE" | "SUBMITTED" | "PROCESSING" | "SUCCESS" | "UNCERTAIN";
 export type TransactionStageHandler = (stage: TransactionStage) => void;
+export const TRANSACTION_POLL_INTERVAL_MS = 2_000;
+export const TRANSACTION_MAX_ATTEMPTS = 75;
+
+export interface ContractWriteResult {
+  ok: boolean;
+  hash?: string;
+  confirmed?: boolean;
+  error?: string;
+}
 
 export function parseGenAmount(value: string): bigint | null {
   const normalized = value.trim();
@@ -39,6 +51,20 @@ export function parseGenAmount(value: string): bigint | null {
 
 type RawMap = Record<string, unknown>;
 const readClient = createClient({ chain: testnetBradbury as never });
+
+type TransactionPollClient = {
+  getTransaction(args: { hash: TransactionHash }): Promise<unknown>;
+};
+
+const TERMINAL_TRANSACTION_STATUSES = new Set([
+  "CANCELED",
+  "CANCELLED",
+  "REJECTED",
+  "FAILED",
+  "UNDETERMINED",
+  "VALIDATORS_TIMEOUT",
+  "LEADER_TIMEOUT",
+]);
 
 function isMap(value: unknown): value is RawMap {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -476,13 +502,107 @@ async function readContract(functionName: string, args: unknown[] = []): Promise
   });
 }
 
+export function transactionStatusName(receipt: RawMap): string | undefined {
+  const named = receipt["statusName"];
+  if (typeof named === "string") return named;
+  const status = receipt["status"];
+  if (typeof status === "number") {
+    return transactionsStatusNumberToName[
+      String(status) as keyof typeof transactionsStatusNumberToName
+    ];
+  }
+  if (typeof status === "string") {
+    return (
+      transactionsStatusNumberToName[status as keyof typeof transactionsStatusNumberToName] ??
+      status
+    );
+  }
+  return undefined;
+}
+
+export function executionResultName(receipt: RawMap): string | undefined {
+  const named = receipt["txExecutionResultName"];
+  if (typeof named === "string") return named;
+  const result = receipt["txExecutionResult"];
+  if (typeof result === "number") {
+    return executionResultNumberToName[String(result) as keyof typeof executionResultNumberToName];
+  }
+  if (typeof result === "string") {
+    return (
+      executionResultNumberToName[result as keyof typeof executionResultNumberToName] ?? result
+    );
+  }
+  return undefined;
+}
+
+export async function waitForAcceptedExecution({
+  client,
+  hash,
+  onStage,
+  maxAttempts = TRANSACTION_MAX_ATTEMPTS,
+  pollIntervalMs = TRANSACTION_POLL_INTERVAL_MS,
+  wait = (milliseconds: number) =>
+    new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds)),
+}: {
+  client: TransactionPollClient;
+  hash: string;
+  onStage?: TransactionStageHandler | undefined;
+  maxAttempts?: number | undefined;
+  pollIntervalMs?: number | undefined;
+  wait?: ((milliseconds: number) => Promise<unknown>) | undefined;
+}): Promise<{ confirmed: boolean; status?: string | undefined; receipt?: RawMap | undefined }> {
+  const attempts = Math.max(1, Math.floor(maxAttempts));
+  const delay = Math.max(0, Math.floor(pollIntervalMs));
+  let lastStatus: string | undefined;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    let receipt: RawMap | null = null;
+    try {
+      const value = await client.getTransaction({ hash: hash as TransactionHash });
+      if (isMap(value)) receipt = value;
+    } catch {
+      // A submitted transaction can be temporarily absent from the read path.
+    }
+
+    if (receipt) {
+      const status = transactionStatusName(receipt);
+      const execution = executionResultName(receipt);
+      lastStatus = status ?? lastStatus;
+
+      if (execution === ExecutionResult.FINISHED_WITH_ERROR) {
+        throw new Error("FINISHED_WITH_ERROR");
+      }
+      if (status && TERMINAL_TRANSACTION_STATUSES.has(status)) {
+        throw new Error(`TRANSACTION_${status}`);
+      }
+      if (
+        (status === TransactionStatus.ACCEPTED || status === TransactionStatus.FINALIZED) &&
+        execution === ExecutionResult.FINISHED_WITH_RETURN
+      ) {
+        onStage?.("SUCCESS");
+        return { confirmed: true, status, receipt };
+      }
+      if (status === TransactionStatus.ACCEPTED || status === TransactionStatus.FINALIZED) {
+        return { confirmed: false, status, receipt };
+      }
+    }
+
+    if (attempt + 1 < attempts) {
+      onStage?.("PROCESSING");
+      await wait(delay);
+    }
+  }
+
+  return { confirmed: false, status: lastStatus };
+}
+
 async function writeContract(
   address: string,
   functionName: string,
   args: unknown[],
   value: bigint,
   onStage?: TransactionStageHandler,
-): Promise<{ hash: string }> {
+): Promise<{ hash: string; confirmed: boolean }> {
   if (!isAddress(address)) throw new Error("Invalid wallet address.");
   if (value < 0n) throw new Error("Invalid transaction value.");
   if (typeof window === "undefined" || !window.ethereum)
@@ -503,24 +623,29 @@ async function writeContract(
     value,
   });
   onStage?.("SUBMITTED");
-  onStage?.("PROCESSING");
-  const receipt = await readClient.waitForTransactionReceipt({
-    hash: String(hash) as TransactionHash,
-    status: TransactionStatus.ACCEPTED,
+  const outcome = await waitForAcceptedExecution({
+    client: readClient as unknown as TransactionPollClient,
+    hash: String(hash),
+    onStage,
   });
-  if (receipt.txExecutionResultName !== ExecutionResult.FINISHED_WITH_RETURN) {
-    throw new Error(
-      receipt.txExecutionResultName ?? "Contract execution did not finish successfully.",
-    );
+  if (!outcome.confirmed) {
+    onStage?.("UNCERTAIN");
   }
-  onStage?.("SUCCESS");
-  return { hash: String(hash) };
+  return { hash: String(hash), confirmed: outcome.confirmed };
 }
 
 export function contractError(error: unknown): string {
   const message = errorText(error).toLowerCase();
   if (/user rejected|rejected the request|denied|user cancelled|user canceled/.test(message))
     return "You cancelled the transaction.";
+  if (
+    /finished_with_error|transaction_(rejected|failed|canceled|cancelled|undetermined|validators_timeout|leader_timeout)/.test(
+      message,
+    )
+  )
+    return "GenLayer rejected the transaction execution.";
+  if (/transaction_still_pending|confirmation is taking longer/.test(message))
+    return "Transaction submitted, but confirmation is taking longer than expected.";
   if (/switch.*bradbury|wrong network|chain id|unsupported chain/.test(message))
     return "Switch your wallet to Bradbury Testnet.";
   if (/insufficient funds|insufficient balance|not enough gen|balance too low/.test(message))
@@ -751,7 +876,7 @@ export const contractAdapter = {
     startMs: number,
     user: string,
     onStage?: TransactionStageHandler,
-  ): Promise<{ ok: boolean; hash?: string; error?: string }> {
+  ): Promise<ContractWriteResult> {
     try {
       const receipt = await writeContract(
         user,
@@ -760,7 +885,7 @@ export const contractAdapter = {
         0n,
         onStage,
       );
-      return { ok: true, hash: receipt.hash };
+      return { ok: true, hash: receipt.hash, confirmed: receipt.confirmed };
     } catch (error) {
       return { ok: false, error: contractError(error) };
     }
@@ -772,7 +897,7 @@ export const contractAdapter = {
     amountWei: bigint,
     user: string,
     onStage?: TransactionStageHandler,
-  ): Promise<{ ok: boolean; hash?: string; error?: string }> {
+  ): Promise<ContractWriteResult> {
     try {
       const receipt = await writeContract(
         user,
@@ -781,7 +906,7 @@ export const contractAdapter = {
         amountWei,
         onStage,
       );
-      return { ok: true, hash: receipt.hash };
+      return { ok: true, hash: receipt.hash, confirmed: receipt.confirmed };
     } catch (error) {
       return { ok: false, error: contractError(error) };
     }
@@ -791,7 +916,7 @@ export const contractAdapter = {
     marketId: string,
     user: string,
     onStage?: TransactionStageHandler,
-  ): Promise<{ ok: boolean; hash?: string; error?: string }> {
+  ): Promise<ContractWriteResult> {
     try {
       const receipt = await writeContract(
         user,
@@ -800,7 +925,7 @@ export const contractAdapter = {
         0n,
         onStage,
       );
-      return { ok: true, hash: receipt.hash };
+      return { ok: true, hash: receipt.hash, confirmed: receipt.confirmed };
     } catch (error) {
       return { ok: false, error: contractError(error) };
     }
@@ -810,10 +935,10 @@ export const contractAdapter = {
     marketId: string,
     user: string,
     onStage?: TransactionStageHandler,
-  ): Promise<{ ok: boolean; hash?: string; error?: string }> {
+  ): Promise<ContractWriteResult> {
     try {
       const receipt = await writeContract(user, "claim", [toMarketId(marketId)], 0n, onStage);
-      return { ok: true, hash: receipt.hash };
+      return { ok: true, hash: receipt.hash, confirmed: receipt.confirmed };
     } catch (error) {
       return { ok: false, error: contractError(error) };
     }
@@ -823,7 +948,7 @@ export const contractAdapter = {
     marketId: string,
     user: string,
     onStage?: TransactionStageHandler,
-  ): Promise<{ ok: boolean; hash?: string; error?: string }> {
+  ): Promise<ContractWriteResult> {
     try {
       const receipt = await writeContract(
         user,
@@ -832,7 +957,7 @@ export const contractAdapter = {
         0n,
         onStage,
       );
-      return { ok: true, hash: receipt.hash };
+      return { ok: true, hash: receipt.hash, confirmed: receipt.confirmed };
     } catch (error) {
       return { ok: false, error: contractError(error) };
     }

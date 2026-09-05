@@ -14,8 +14,6 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   TransactionDialog,
-  TRANSACTION_DELAYED_MESSAGE,
-  TRANSACTION_UPDATE_MESSAGE,
   type TransactionDialogController,
   useTransactionDialog,
 } from "@/components/dominion/TransactionDialog";
@@ -28,7 +26,7 @@ import {
   useUserPositions,
 } from "@/lib/dominion/useDominion";
 import type { MarketView, Position } from "@/lib/dominion/types";
-import { retryRead } from "@/lib/dominion/retry";
+import { reconcileAcceptedWrite } from "@/lib/dominion/retry";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/portfolio")({
@@ -121,7 +119,7 @@ function ClaimablePosition({
 }) {
   const isRefund = market.refundAvailable;
   const claim = async () => {
-    transaction.begin(isRefund ? "refund" : "claim");
+    if (!transaction.begin(isRefund ? "refund" : "claim")) return;
     const result = isRefund
       ? await contractAdapter.claimRefund(market.id, address, transaction.update)
       : await contractAdapter.claim(market.id, address, transaction.update);
@@ -129,14 +127,31 @@ function ClaimablePosition({
       transaction.fail(result.error ?? "Something went wrong. Please try again.");
       return;
     }
-    transaction.success(TRANSACTION_UPDATE_MESSAGE);
+    if (result.confirmed !== true || !result.hash) {
+      transaction.uncertain(result.hash);
+      return;
+    }
+    transaction.success(result.hash);
     await onRefresh();
-    const updatedPosition = await retryRead(
+    const updatedPosition = await reconcileAcceptedWrite(
+      result,
       () => contractAdapter.getUserPosition(market.id, address),
       (position) => Boolean(position && (isRefund ? position.refunded : position.claimed)),
+      { onWaiting: () => transaction.reconcile("Updating your balance...") },
     );
-    if (updatedPosition) await onRefresh();
-    transaction.success(updatedPosition ? undefined : TRANSACTION_DELAYED_MESSAGE);
+    if (!updatedPosition) {
+      transaction.reconcile(
+        isRefund
+          ? "Refund accepted. Updating your balance..."
+          : "Claim accepted. Updating your balance...",
+      );
+      return;
+    }
+    await onRefresh();
+    transaction.done(
+      result.hash,
+      isRefund ? "Refund claimed successfully." : "Winnings claimed successfully.",
+    );
   };
   return (
     <div className="flex flex-col gap-4 border-b border-border px-4 py-4 last:border-0 sm:flex-row sm:items-center sm:justify-between">
@@ -190,11 +205,13 @@ function ClaimablePosition({
         >
           {transaction.busy
             ? "Processing…"
-            : transaction.locked
-              ? "Updating…"
-              : isRefund
-                ? "Refund"
-                : "Claim"}
+            : transaction.isReconciling
+              ? "Updating your balance..."
+              : transaction.locked
+                ? "Transaction submitted"
+                : isRefund
+                  ? "Refund"
+                  : "Claim"}
         </button>
       </div>
     </div>
@@ -404,7 +421,9 @@ function PortfolioPage() {
                     key={market.id}
                     market={market}
                     address={address}
-                    onRefresh={refresh}
+                    onRefresh={() =>
+                      refresh(market.refundAvailable ? "refund" : "claim", market.id)
+                    }
                     transaction={transaction}
                   />
                 ))}

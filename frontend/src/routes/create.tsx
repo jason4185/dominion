@@ -5,12 +5,7 @@ import { toast } from "sonner";
 import { useAccount, useConnect } from "wagmi";
 import { Button } from "@/components/ui/button";
 import { CategoryBadge, Panel } from "@/components/dominion/primitives";
-import {
-  TransactionDialog,
-  TRANSACTION_DELAYED_MESSAGE,
-  TRANSACTION_UPDATE_MESSAGE,
-  useTransactionDialog,
-} from "@/components/dominion/TransactionDialog";
+import { TransactionDialog, useTransactionDialog } from "@/components/dominion/TransactionDialog";
 import { assetBySymbol, categoryById } from "@/lib/dominion/categories";
 import { BRADBURY_CHAIN_ID, contractAdapter, contractError } from "@/lib/dominion/contractAdapter";
 import { HOUR_MS, utcDate, utcWindow } from "@/lib/dominion/format";
@@ -20,7 +15,7 @@ import {
   useNow,
   useRefreshDominion,
 } from "@/lib/dominion/useDominion";
-import { retryRead } from "@/lib/dominion/retry";
+import { reconcileAcceptedWrite } from "@/lib/dominion/retry";
 import type { Asset, CategoryId } from "@/lib/dominion/types";
 import { cn } from "@/lib/utils";
 import { dominionInjectedConnector } from "@/lib/walletConfig";
@@ -141,7 +136,7 @@ function CreateMarketPage() {
       toast.error("Switch your wallet to Bradbury Testnet first.");
       return;
     }
-    transaction.begin("create");
+    if (!transaction.begin("create")) return;
     const result = await contractAdapter.createMarket(
       activeCategory,
       startMs,
@@ -152,18 +147,25 @@ function CreateMarketPage() {
       transaction.fail(result.error ?? "Unable to create market.");
       return;
     }
-    transaction.success(TRANSACTION_UPDATE_MESSAGE);
-    await refresh();
-    const createdMarket = await retryRead(
-      () => contractAdapter.getMarketByCategoryStart(activeCategory, startMs),
-      (market) => market !== null,
-    );
-    if (!createdMarket) {
-      transaction.success(TRANSACTION_DELAYED_MESSAGE);
+    if (result.confirmed !== true || !result.hash) {
+      transaction.uncertain(result.hash);
       return;
     }
-    transaction.success();
-    window.setTimeout(() => navigate({ to: "/market/$id", params: { id: createdMarket.id } }), 900);
+    transaction.success(result.hash);
+    await refresh("create");
+    const createdMarket = await reconcileAcceptedWrite(
+      result,
+      () => contractAdapter.getMarketByCategoryStart(activeCategory, startMs),
+      (market) => market !== null,
+      { onWaiting: () => transaction.reconcile("Loading market...") },
+    );
+    if (!createdMarket) {
+      transaction.reconcile("Market created. Loading market...");
+      return;
+    }
+    await refresh("create");
+    transaction.done(result.hash, "Market created successfully.");
+    void navigate({ to: "/market/$id", params: { id: createdMarket.id } });
   };
 
   return (
@@ -344,9 +346,11 @@ function CreateMarketPage() {
             >
               {transaction.busy
                 ? "Creating market…"
-                : transaction.locked
-                  ? "Updating market…"
-                  : "Create market"}
+                : transaction.isReconciling
+                  ? "Loading market..."
+                  : transaction.locked
+                    ? "Market created"
+                    : "Create market"}
             </Button>
             <p className="mt-3 text-center text-[10px] leading-relaxed text-muted-foreground">
               Markets must start strictly in the future on an exact UTC hour. Duplicate category +

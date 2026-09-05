@@ -1,9 +1,12 @@
 export interface RetryReadOptions {
   attempts?: number;
   delayMs?: number;
+  onWaiting?: () => void;
 }
 
 export const MAX_QUERY_RETRIES = 2;
+export const POST_WRITE_RECONCILIATION_ATTEMPTS = 10;
+export const POST_WRITE_RECONCILIATION_DELAY_MS = 1_500;
 
 function errorStatus(error: unknown): number | undefined {
   if (!error || typeof error !== "object") return undefined;
@@ -47,7 +50,7 @@ export function queryRetryDelay(attemptIndex: number): number {
 export async function retryRead<T>(
   read: () => Promise<T>,
   isReady: (value: T) => boolean,
-  { attempts = 15, delayMs = 1_500 }: RetryReadOptions = {},
+  { attempts = 15, delayMs = 1_500, onWaiting }: RetryReadOptions = {},
 ): Promise<T | undefined> {
   const count = Math.max(1, Math.floor(attempts));
   const delay = Math.max(0, Math.floor(delayMs));
@@ -59,9 +62,34 @@ export async function retryRead<T>(
     } catch {
       // A confirmed write must remain successful while contract reads catch up.
     }
+    onWaiting?.();
     if (attempt < count - 1 && delay > 0) {
       await new Promise<void>((resolve) => globalThis.setTimeout(resolve, delay));
     }
   }
   return undefined;
+}
+
+/**
+ * Reconcile only after the write has already reached ACCEPTED with a
+ * successful execution result. Read lag and read failures never rewrite that
+ * successful transaction outcome.
+ */
+export async function reconcileAcceptedWrite<T>(
+  result: { ok: boolean; confirmed?: boolean },
+  read: () => Promise<T>,
+  isReady: (value: T) => boolean,
+  options: RetryReadOptions = {},
+): Promise<T | undefined> {
+  if (!result.ok || result.confirmed !== true) return undefined;
+  let waitingNotified = false;
+  return retryRead(read, isReady, {
+    attempts: options.attempts ?? POST_WRITE_RECONCILIATION_ATTEMPTS,
+    delayMs: options.delayMs ?? POST_WRITE_RECONCILIATION_DELAY_MS,
+    onWaiting: () => {
+      if (waitingNotified) return;
+      waitingNotified = true;
+      options.onWaiting?.();
+    },
+  });
 }

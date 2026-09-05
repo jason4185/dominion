@@ -1,5 +1,16 @@
-import { AlertCircle, CheckCircle2, LoaderCircle, WalletCards } from "lucide-react";
-import { useCallback, useState, type ReactNode } from "react";
+import { AlertCircle, CheckCircle2, LoaderCircle, RefreshCw, WalletCards } from "lucide-react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
+import type { TransactionStage } from "@/lib/dominion/contractAdapter";
+import {
+  isTransactionBusy,
+  isTransactionLocked,
+  transactionStageCopy,
+} from "@/lib/dominion/transactionState";
+import type {
+  TransactionAction,
+  TransactionDialogStage,
+  TransactionDialogState,
+} from "@/lib/dominion/transactionState";
 import {
   Dialog,
   DialogContent,
@@ -7,73 +18,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { TransactionStage } from "@/lib/dominion/contractAdapter";
 import { cn } from "@/lib/utils";
 
-export type TransactionAction = "create" | "bet" | "top_up" | "settle" | "claim" | "refund";
-export type TransactionDialogStage = "IDLE" | TransactionStage | "ERROR";
-export const TRANSACTION_UPDATE_MESSAGE = "Transaction confirmed. Updating data...";
-export const TRANSACTION_DELAYED_MESSAGE =
-  "Transaction confirmed, but the latest data is taking longer to load.";
-
-export interface TransactionDialogState {
-  open: boolean;
-  stage: TransactionDialogStage;
-  action: TransactionAction;
-  error?: string;
-  postWriteMessage?: string;
-}
-
-const ACTION_LABEL: Record<TransactionAction, string> = {
-  create: "market creation",
-  bet: "your bet",
-  top_up: "your top-up",
-  settle: "market settlement",
-  claim: "your winnings claim",
-  refund: "your refund claim",
-};
-
-function successCopy(action: TransactionAction): string {
-  if (action === "create") return "Market created successfully.";
-  if (action === "bet") return "Bet placed successfully.";
-  if (action === "top_up") return "Bet increased successfully.";
-  if (action === "settle") return "Market settled successfully.";
-  if (action === "claim") return "Winnings claimed successfully.";
-  return "Refund claimed successfully.";
-}
-
-function stageCopy(state: TransactionDialogState): { title: string; message: string } {
-  if (state.stage === "AWAITING_SIGNATURE") {
-    return {
-      title: "Confirm in your wallet",
-      message: `Approve ${ACTION_LABEL[state.action]} in your wallet.`,
-    };
-  }
-  if (state.stage === "SUBMITTED") {
-    return {
-      title: "Transaction submitted",
-      message: "Waiting for Bradbury to confirm your transaction.",
-    };
-  }
-  if (state.stage === "PROCESSING") {
-    return {
-      title: "Processing transaction",
-      message: "GenLayer is processing your transaction on Bradbury.",
-    };
-  }
-  if (state.stage === "SUCCESS") return { title: "Success", message: successCopy(state.action) };
-  if (state.stage === "ERROR") {
-    return {
-      title: "Transaction failed",
-      message: state.error ?? "Something went wrong. Please try again.",
-    };
-  }
-  return { title: "Transaction", message: "" };
-}
+export type {
+  TransactionAction,
+  TransactionDialogStage,
+  TransactionDialogState,
+} from "@/lib/dominion/transactionState";
 
 function StageIcon({ stage }: { stage: TransactionDialogStage }) {
-  if (stage === "SUCCESS") return <CheckCircle2 className="size-6 text-positive" />;
-  if (stage === "ERROR") return <AlertCircle className="size-6 text-destructive" />;
+  if (stage === "SUCCESS" || stage === "DONE")
+    return <CheckCircle2 className="size-6 text-positive" />;
+  if (stage === "ERROR" || stage === "UNCERTAIN")
+    return <AlertCircle className="size-6 text-destructive" />;
+  if (stage === "RECONCILING") return <RefreshCw className="size-6 text-primary-glow" />;
   if (stage === "AWAITING_SIGNATURE") return <WalletCards className="size-6 text-primary-glow" />;
   return <LoaderCircle className="size-6 animate-spin text-primary-glow" />;
 }
@@ -84,43 +42,100 @@ export function useTransactionDialog() {
     stage: "IDLE",
     action: "bet",
   });
+  const activeWrite = useRef(false);
 
-  const begin = useCallback((action: TransactionAction) => {
+  const begin = useCallback((action: TransactionAction): boolean => {
+    if (activeWrite.current) return false;
+    activeWrite.current = true;
     setState({ open: true, stage: "AWAITING_SIGNATURE", action });
+    return true;
   }, []);
+
   const update = useCallback((stage: TransactionStage) => {
-    setState((current) => {
-      const { error: _error, ...rest } = current;
-      return { ...rest, open: true, stage };
-    });
+    setState((current) => ({ ...current, open: true, stage, error: undefined }));
   }, []);
-  const success = useCallback((postWriteMessage?: string) => {
-    setState((current) => {
-      const { error: _error, postWriteMessage: _oldMessage, ...rest } = current;
-      return postWriteMessage
-        ? { ...rest, open: true, stage: "SUCCESS", postWriteMessage }
-        : { ...rest, open: true, stage: "SUCCESS" };
-    });
+
+  const success = useCallback((hash?: string, message?: string) => {
+    setState((current) => ({
+      ...current,
+      open: true,
+      stage: "SUCCESS",
+      hash: hash ?? current.hash,
+      message,
+      error: undefined,
+    }));
   }, []);
+
+  const done = useCallback((hash?: string, message?: string) => {
+    activeWrite.current = false;
+    setState((current) => ({
+      ...current,
+      open: true,
+      stage: "DONE",
+      hash: hash ?? current.hash,
+      message,
+      error: undefined,
+    }));
+  }, []);
+
+  const reconcile = useCallback((message: string) => {
+    setState((current) => ({
+      ...current,
+      open: true,
+      stage: "RECONCILING",
+      message,
+      error: undefined,
+    }));
+  }, []);
+
+  const uncertain = useCallback((hash?: string) => {
+    setState((current) => ({
+      ...current,
+      open: true,
+      stage: "UNCERTAIN",
+      hash: hash ?? current.hash,
+      error: undefined,
+      message: undefined,
+    }));
+  }, []);
+
   const fail = useCallback((error: string) => {
+    activeWrite.current = false;
     setState((current) => ({
       ...current,
       open: true,
       stage: "ERROR",
       error: error || "Something went wrong. Please try again.",
+      message: undefined,
     }));
   }, []);
+
   const close = useCallback(() => {
-    setState((current) => ({ ...current, open: false }));
+    setState((current) =>
+      current.stage === "DONE"
+        ? { open: false, stage: "IDLE", action: current.action }
+        : { ...current, open: false },
+    );
   }, []);
 
-  const busy =
-    state.stage === "AWAITING_SIGNATURE" ||
-    state.stage === "SUBMITTED" ||
-    state.stage === "PROCESSING";
-  const locked = busy || (state.stage === "SUCCESS" && Boolean(state.postWriteMessage));
+  const busy = isTransactionBusy(state.stage);
+  const isReconciling = state.stage === "RECONCILING";
+  const locked = isTransactionLocked(state.stage);
 
-  return { state, busy, locked, begin, update, success, fail, close };
+  return {
+    state,
+    busy,
+    locked,
+    isReconciling,
+    begin,
+    update,
+    success,
+    done,
+    reconcile,
+    uncertain,
+    fail,
+    close,
+  };
 }
 
 export type TransactionDialogController = ReturnType<typeof useTransactionDialog>;
@@ -136,7 +151,8 @@ export function TransactionDialog({
   onClose: () => void;
   footer?: ReactNode;
 }) {
-  const copy = stageCopy(state);
+  const copy = transactionStageCopy(state);
+  const showProcessingHint = state.stage === "SUBMITTED" || state.stage === "PROCESSING";
   return (
     <Dialog
       open={state.open}
@@ -150,9 +166,9 @@ export function TransactionDialog({
           <div
             className={cn(
               "mx-auto grid size-12 place-items-center rounded-xl",
-              state.stage === "SUCCESS"
+              state.stage === "SUCCESS" || state.stage === "DONE"
                 ? "bg-positive-soft"
-                : state.stage === "ERROR"
+                : state.stage === "ERROR" || state.stage === "UNCERTAIN"
                   ? "bg-destructive/10"
                   : "bg-primary-soft",
             )}
@@ -166,15 +182,26 @@ export function TransactionDialog({
             {copy.message}
           </DialogDescription>
         </DialogHeader>
-        {state.stage === "SUBMITTED" || state.stage === "PROCESSING" ? (
+        {showProcessingHint ? (
           <div className="rounded-lg border border-border bg-surface px-3 py-2.5 text-center text-[11px] text-muted-foreground">
-            Keep this window open while Bradbury processes the transaction.
+            Waiting for the GenLayer transaction status to reach ACCEPTED with a finished execution
+            result.
           </div>
         ) : null}
-        {state.stage === "SUCCESS" && state.postWriteMessage ? (
+        {state.stage === "RECONCILING" ? (
           <div className="rounded-lg border border-primary/25 bg-primary-soft px-3 py-2.5 text-center text-[11px] text-primary-glow">
-            {state.postWriteMessage}
+            {state.message ?? "Updating state..."}
           </div>
+        ) : null}
+        {state.hash ? (
+          <div className="rounded-lg border border-border bg-surface px-3 py-2.5 text-center text-[11px] text-muted-foreground">
+            Transaction hash: <span className="break-all font-mono">{state.hash}</span>
+          </div>
+        ) : null}
+        {state.stage === "ERROR" ? (
+          <p className="rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">
+            {state.error}
+          </p>
         ) : null}
         {footer ?? (
           <button

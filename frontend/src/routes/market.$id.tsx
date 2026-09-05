@@ -26,8 +26,6 @@ import {
 import { LivePerformanceChart } from "@/components/dominion/LivePerformanceChart";
 import {
   TransactionDialog,
-  TRANSACTION_DELAYED_MESSAGE,
-  TRANSACTION_UPDATE_MESSAGE,
   type TransactionDialogController,
   useTransactionDialog,
 } from "@/components/dominion/TransactionDialog";
@@ -51,7 +49,8 @@ import {
   useUserPosition,
 } from "@/lib/dominion/useDominion";
 import type { MarketView, SourceEvidence } from "@/lib/dominion/types";
-import { retryRead } from "@/lib/dominion/retry";
+import { reconcileAcceptedWrite } from "@/lib/dominion/retry";
+import type { DominionWriteKind } from "@/lib/dominion/useDominion";
 import { cn } from "@/lib/utils";
 import { dominionInjectedConnector } from "@/lib/walletConfig";
 
@@ -73,11 +72,11 @@ function timing(market: MarketView, now: number) {
   if (market.status === "UPCOMING")
     return now < market.startMs
       ? `Opens in ${countdown(market.startMs, now)}`
-      : "Updating market state…";
+      : "Awaiting contract state...";
   if (market.status === "OPEN")
     return now < market.endMs
       ? `Closes in ${countdown(market.endMs, now)}`
-      : "Updating market state…";
+      : "Awaiting contract state...";
   if (market.status === "PENDING_SETTLEMENT") return "Settlement is available";
   if (market.status === "INCONCLUSIVE") return "Refunds remain available indefinitely";
   return market.winner ? `${market.winner} won this market` : "Market resolved";
@@ -264,7 +263,8 @@ function BetPanel({
 
   const submitBet = async () => {
     if (!address || !amountWei || !chosenAsset) return;
-    transaction.begin(market.userSelectedAsset ? "top_up" : "bet");
+    const action = market.userSelectedAsset ? "top_up" : "bet";
+    if (!transaction.begin(action)) return;
     const result = await contractAdapter.placeBet(
       market.id,
       chosenAsset,
@@ -276,15 +276,28 @@ function BetPanel({
       transaction.fail(result.error ?? "Something went wrong. Please try again.");
       return;
     }
-    transaction.success(TRANSACTION_UPDATE_MESSAGE);
+    if (result.confirmed !== true || !result.hash) {
+      transaction.uncertain(result.hash);
+      return;
+    }
+    transaction.success(result.hash);
     setAmount("");
     await onRefresh();
-    const updatedPosition = await retryRead(
+    const updatedPosition = await reconcileAcceptedWrite(
+      result,
       () => contractAdapter.getUserPosition(market.id, address),
       (position) => Boolean(position && position.stake > market.userStake),
+      { onWaiting: () => transaction.reconcile("Updating your position...") },
     );
-    if (updatedPosition) await onRefresh();
-    transaction.success(updatedPosition ? undefined : TRANSACTION_DELAYED_MESSAGE);
+    if (!updatedPosition) {
+      transaction.reconcile("Bet accepted. Updating your position...");
+      return;
+    }
+    await onRefresh();
+    transaction.done(
+      result.hash,
+      action === "top_up" ? "Bet increased successfully." : "Bet placed successfully.",
+    );
   };
 
   const handleBetClick = () => {
@@ -430,11 +443,13 @@ function BetPanel({
             ? "Connect wallet to bet"
             : transaction.busy
               ? "Waiting for transaction…"
-              : transaction.locked
-                ? "Updating position…"
-                : market.userSelectedAsset
-                  ? `Top up ${market.userSelectedAsset}`
-                  : `Place ${chosenAsset} bet`}
+              : transaction.isReconciling
+                ? "Updating your position..."
+                : transaction.locked
+                  ? "Bet submitted"
+                  : market.userSelectedAsset
+                    ? `Top up ${market.userSelectedAsset}`
+                    : `Place ${chosenAsset} bet`}
         </Button>
         <p className="mt-2 text-center text-[10px] text-muted-foreground">
           Minimum 1 GEN · no app-level maximum
@@ -458,7 +473,9 @@ function TerminalPanel({
 }: {
   market: MarketView;
   address: string | undefined;
-  onRefresh: () => void | Promise<void>;
+  onRefresh: (
+    kind: Extract<DominionWriteKind, "settle" | "claim" | "refund">,
+  ) => void | Promise<void>;
   transaction: TransactionDialogController;
 }) {
   const { connect } = useConnect();
@@ -476,23 +493,33 @@ function TerminalPanel({
         );
         return;
       }
-      transaction.begin("settle");
+      if (!transaction.begin("settle")) return;
       const result = await contractAdapter.settleMarket(market.id, address, transaction.update);
       if (!result.ok) {
         transaction.fail(result.error ?? "Something went wrong. Please try again.");
         return;
       }
-      transaction.success(TRANSACTION_UPDATE_MESSAGE);
-      await onRefresh();
-      const resolvedMarket = await retryRead(
+      if (result.confirmed !== true || !result.hash) {
+        transaction.uncertain(result.hash);
+        return;
+      }
+      transaction.success(result.hash);
+      await onRefresh("settle");
+      const resolvedMarket = await reconcileAcceptedWrite(
+        result,
         () => contractAdapter.getMarket(market.id, Date.now()),
         (nextMarket) =>
           Boolean(
             nextMarket && (nextMarket.status === "SETTLED" || nextMarket.status === "INCONCLUSIVE"),
           ),
+        { onWaiting: () => transaction.reconcile("Updating market state...") },
       );
-      if (resolvedMarket) await onRefresh();
-      transaction.success(resolvedMarket ? undefined : TRANSACTION_DELAYED_MESSAGE);
+      if (!resolvedMarket) {
+        transaction.reconcile("Settlement accepted. Updating market state...");
+        return;
+      }
+      await onRefresh("settle");
+      transaction.done(result.hash, "Market settled successfully.");
     };
     return (
       <Panel className="p-4 lg:sticky lg:top-20">
@@ -517,9 +544,11 @@ function TerminalPanel({
           <RefreshCw className="size-4" />
           {transaction.busy
             ? "Settling…"
-            : transaction.locked
-              ? "Updating market…"
-              : "Settle market"}
+            : transaction.isReconciling
+              ? "Updating market state..."
+              : transaction.locked
+                ? "Settlement submitted"
+                : "Settle market"}
         </Button>
       </Panel>
     );
@@ -540,20 +569,30 @@ function TerminalPanel({
         toast.error("Connect the wallet that owns this position.");
         return;
       }
-      transaction.begin("claim");
+      if (!transaction.begin("claim")) return;
       const result = await contractAdapter.claim(market.id, address, transaction.update);
       if (!result.ok) {
         transaction.fail(result.error ?? "Something went wrong. Please try again.");
         return;
       }
-      transaction.success(TRANSACTION_UPDATE_MESSAGE);
-      await onRefresh();
-      const updatedPosition = await retryRead(
+      if (result.confirmed !== true || !result.hash) {
+        transaction.uncertain(result.hash);
+        return;
+      }
+      transaction.success(result.hash);
+      await onRefresh("claim");
+      const updatedPosition = await reconcileAcceptedWrite(
+        result,
         () => contractAdapter.getUserPosition(market.id, address),
         (position) => Boolean(position?.claimed),
+        { onWaiting: () => transaction.reconcile("Updating your balance...") },
       );
-      if (updatedPosition) await onRefresh();
-      transaction.success(updatedPosition ? undefined : TRANSACTION_DELAYED_MESSAGE);
+      if (!updatedPosition) {
+        transaction.reconcile("Claim accepted. Updating your balance...");
+        return;
+      }
+      await onRefresh("claim");
+      transaction.done(result.hash, "Winnings claimed successfully.");
     };
     return (
       <Panel className="border-positive/30 bg-positive-soft p-4 lg:sticky lg:top-20">
@@ -576,9 +615,11 @@ function TerminalPanel({
         >
           {transaction.busy
             ? "Claiming…"
-            : transaction.locked
-              ? "Updating claim…"
-              : `Claim ${gen(market.claimableAmount)} GEN`}
+            : transaction.isReconciling
+              ? "Updating your balance..."
+              : transaction.locked
+                ? "Claim submitted"
+                : `Claim ${gen(market.claimableAmount)} GEN`}
         </Button>
       </Panel>
     );
@@ -607,20 +648,30 @@ function TerminalPanel({
         toast.error("Connect the wallet that owns this position.");
         return;
       }
-      transaction.begin("refund");
+      if (!transaction.begin("refund")) return;
       const result = await contractAdapter.claimRefund(market.id, address, transaction.update);
       if (!result.ok) {
         transaction.fail(result.error ?? "Something went wrong. Please try again.");
         return;
       }
-      transaction.success(TRANSACTION_UPDATE_MESSAGE);
-      await onRefresh();
-      const updatedPosition = await retryRead(
+      if (result.confirmed !== true || !result.hash) {
+        transaction.uncertain(result.hash);
+        return;
+      }
+      transaction.success(result.hash);
+      await onRefresh("refund");
+      const updatedPosition = await reconcileAcceptedWrite(
+        result,
         () => contractAdapter.getUserPosition(market.id, address),
         (position) => Boolean(position?.refunded),
+        { onWaiting: () => transaction.reconcile("Updating your balance...") },
       );
-      if (updatedPosition) await onRefresh();
-      transaction.success(updatedPosition ? undefined : TRANSACTION_DELAYED_MESSAGE);
+      if (!updatedPosition) {
+        transaction.reconcile("Refund accepted. Updating your balance...");
+        return;
+      }
+      await onRefresh("refund");
+      transaction.done(result.hash, "Refund claimed successfully.");
     };
     return (
       <Panel className="border-gold/30 bg-gold-soft p-4 lg:sticky lg:top-20">
@@ -644,9 +695,11 @@ function TerminalPanel({
         >
           {transaction.busy
             ? "Claiming refund…"
-            : transaction.locked
-              ? "Updating refund…"
-              : `Claim ${gen(market.claimableAmount)} GEN refund`}
+            : transaction.isReconciling
+              ? "Updating your balance..."
+              : transaction.locked
+                ? "Refund submitted"
+                : `Claim ${gen(market.claimableAmount)} GEN refund`}
         </Button>
       </Panel>
     );
@@ -682,10 +735,14 @@ function MarketDetailPage() {
     walletHydrating: isConnecting || isReconnecting,
     query: positionQuery,
   });
+  // Keep the last authoritative market snapshot visible while a background
+  // query refreshes. Reconciliation messaging belongs to the write dialog,
+  // not to ordinary TanStack `isFetching` state.
+  const displayStatus = resolvedStatus ?? publicMarket?.status ?? null;
   const market =
-    publicMarket && resolvedStatus
+    publicMarket && displayStatus
       ? applyPositionToMarket(
-          { ...publicMarket, status: resolvedStatus },
+          { ...publicMarket, status: displayStatus },
           positionState === "HAS_POSITION" ? (positionQuery.data ?? null) : null,
         )
       : null;
@@ -746,15 +803,7 @@ function MarketDetailPage() {
     );
   }
 
-  if (marketQuery.isFetching || bettingStateQuery.isFetching || !market) {
-    return (
-      <main className="mx-auto max-w-3xl px-4 py-10 lg:px-6">
-        <Panel className="px-6 py-14 text-center text-xs text-muted-foreground">
-          Updating market state…
-        </Panel>
-      </main>
-    );
-  }
+  if (!market) return null;
 
   const definition = categoryById(market.category);
   const evidence = evidenceQuery.data ?? [];
@@ -1014,14 +1063,14 @@ function MarketDetailPage() {
               now={now}
               selectedAsset={selectedAsset || market.assets[0]?.symbol || ""}
               onSelect={setSelectedAsset}
-              onRefresh={refresh}
+              onRefresh={() => refresh("place_bet", id)}
               transaction={transaction}
             />
           ) : (
             <TerminalPanel
               market={market}
               address={address}
-              onRefresh={refresh}
+              onRefresh={(kind) => refresh(kind, id)}
               transaction={transaction}
             />
           )}
